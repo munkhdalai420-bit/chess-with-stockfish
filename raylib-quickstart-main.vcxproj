@@ -301,10 +301,10 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="include\Board.h" />
+    <ClInclude Include="include\Piece.h" />
+    <ClInclude Include="include\Renderer.h" />
     <ClInclude Include="include\resource_dir.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="src\main.c" />
   </ItemGroup>
   <ItemGroup>
     <None Include="src\icon.ico" />
@@ -313,12 +313,29 @@
     <ResourceCompile Include="src\application.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="resources\wabbit_alpha.png" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="raylib.vcxproj">
       <Project>{8898EA18-743A-15EF-5DF5-284349369C3F}</Project>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\Board.cpp" />
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\Piece.cpp" />
+    <ClCompile Include="src\Renderer.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\..\Chess_bdt45.png" />
+    <Image Include="..\..\Chess_blt45.png" />
+    <Image Include="..\..\Chess_kdt45.png" />
+    <Image Include="..\..\Chess_klt45.png" />
+    <Image Include="..\..\Chess_ndt45.png" />
+    <Image Include="..\..\Chess_nlt45.png" />
+    <Image Include="..\..\Chess_pdt45.png" />
+    <Image Include="..\..\Chess_plt45.png" />
+    <Image Include="..\..\Chess_qdt45.png" />
+    <Image Include="..\..\Chess_qlt45.png" />
+    <Image Include="..\..\Chess_rdt45.png" />
+    <Image Include="..\..\Chess_rlt45.png" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

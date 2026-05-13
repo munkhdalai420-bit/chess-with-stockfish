@@ -18,11 +18,15 @@
     <ClInclude Include="include\resource_dir.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="src\main.c">
+    <ClInclude Include="include\Board.h">
       <Filter>Source Files</Filter>
-    </ClCompile>
+    </ClInclude>
+    <ClInclude Include="include\Piece.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Renderer.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="src\icon.ico">
@@ -35,7 +39,54 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="resources\wabbit_alpha.png">
+    <ClCompile Include="src\Board.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Piece.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Renderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\..\Chess_kdt45.png">
+      <Filter>Game Resource Files</Filter>
+    </Image>
+    <Image Include="..\..\Chess_qdt45.png">
+      <Filter>Game Resource Files</Filter>
+    </Image>
+    <Image Include="..\..\Chess_rdt45.png">
+      <Filter>Game Resource Files</Filter>
+    </Image>
+    <Image Include="..\..\Chess_bdt45.png">
+      <Filter>Game Resource Files</Filter>
+    </Image>
+    <Image Include="..\..\Chess_ndt45.png">
+      <Filter>Game Resource Files</Filter>
+    </Image>
+    <Image Include="..\..\Chess_pdt45.png">
+      <Filter>Game Resource Files</Filter>
+    </Image>
+    <Image Include="..\..\Chess_klt45.png">
+      <Filter>Game Resource Files</Filter>
+    </Image>
+    <Image Include="..\..\Chess_qlt45.png">
+      <Filter>Game Resource Files</Filter>
+    </Image>
+    <Image Include="..\..\Chess_rlt45.png">
+      <Filter>Game Resource Files</Filter>
+    </Image>
+    <Image Include="..\..\Chess_blt45.png">
+      <Filter>Game Resource Files</Filter>
+    </Image>
+    <Image Include="..\..\Chess_nlt45.png">
+      <Filter>Game Resource Files</Filter>
+    </Image>
+    <Image Include="..\..\Chess_plt45.png">
       <Filter>Game Resource Files</Filter>
     </Image>
   </ItemGroup>
