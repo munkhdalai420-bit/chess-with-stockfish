@@ -12,7 +12,7 @@ class Board
 public:
     static constexpr int Tiles = 8;
 
-    enum class GameState { Active, Checkmate, Stalemate };
+    enum class GameState { Active, Checkmate, Stalemate, DrawBy50Moves, DrawByRepetition, DrawByMaterial };
     enum class MoveResult { Invalid = 0, Normal, Capture, Castle, Promotion, Check };
 
     // Castling rights bitmask (bit0 = White kingside, bit1 = White queenside,
@@ -91,6 +91,15 @@ public:
     std::string getFEN() const;
     bool loadFromFEN(const std::string& fen);
 
+    // SAN generation
+    std::string moveToSAN(const ChessMove& move);
+
+    // PGN / SAN history
+    std::string getFullPGNText() const;
+
+    // Self-test utilities
+    //void runFENTests();
+
     // Current turn (White starts)
     PieceColor getCurrentTurn() const;
 
@@ -117,7 +126,14 @@ private:
     // FEN-related clocks
     int m_halfmoveClock = 0;
     int m_fullmoveNumber = 1;
+    // Position history for repetition detection (store position key: first 4 FEN fields)
+    std::vector<std::string> m_positionHistory;
+    // SAN history for PGN output
+    std::vector<std::string> m_sanHistory;
     // Board-level castling rights
     uint8_t m_castlingRights = CR_WHITE_K | CR_WHITE_Q | CR_BLACK_K | CR_BLACK_Q;
     // Internal helper (removed: clocks are now updated incrementally)
+    // Position helper
+    std::string getPositionKey() const;
+    bool hasInsufficientMaterial() const;
 };

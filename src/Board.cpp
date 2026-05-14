@@ -3,6 +3,9 @@
 #include <cassert>
 #include <utility>
 #include <cstdlib>
+#include <iostream>
+#include <vector>
+#include <sstream>
 
 Board::Board()
 {
@@ -15,6 +18,177 @@ Board::Board()
     // Default starting castling rights (both sides)
     m_castlingRights = (uint8_t)(Board::CR_WHITE_K | Board::CR_WHITE_Q | Board::CR_BLACK_K | Board::CR_BLACK_Q);
 }
+
+std::string Board::getFullPGNText() const
+{
+    std::ostringstream oss;
+    for (size_t i = 0; i < m_sanHistory.size(); ++i)
+    {
+        if (i % 2 == 0)
+        {
+            // White move: prepend move number
+            size_t moveNo = i/2 + 1;
+            if (i != 0) oss << " ";
+            oss << moveNo << ". ";
+        }
+        else
+        {
+            oss << " ";
+        }
+        oss << m_sanHistory[i];
+    }
+    return oss.str();
+}
+
+static char pieceLetter(PieceType t)
+{
+    switch (t)
+    {
+    case PieceType::King: return 'K';
+    case PieceType::Queen: return 'Q';
+    case PieceType::Rook: return 'R';
+    case PieceType::Bishop: return 'B';
+    case PieceType::Knight: return 'N';
+    default: return '\0';
+    }
+}
+
+static std::string squareName(int r, int c)
+{
+    std::string s;
+    s.push_back((char)('a' + c));
+    s.push_back((char)('0' + (8 - r)));
+    return s;
+}
+
+std::string Board::moveToSAN(const ChessMove& move)
+{
+    std::ostringstream out;
+
+    // Castling
+    if (move.isCastling)
+    {
+        // kingside if dst col > src col
+        if (move.c2 > move.c1) return std::string("O-O");
+        return std::string("O-O-O");
+    }
+
+    PieceType pt = move.movedType;
+    char pLetter = pieceLetter(pt);
+
+    bool isCapture = move.capturedType.has_value() || move.isEnPassant;
+
+    if (pt == PieceType::Pawn)
+    {
+        if (isCapture)
+        {
+            out << (char)('a' + move.c1) << 'x' << squareName(move.r2, move.c2);
+        }
+        else
+        {
+            out << squareName(move.r2, move.c2);
+        }
+
+        // Promotion
+        if (move.isPromotion)
+        {
+            char promo = 'Q';
+            if (move.promotionChoice.has_value())
+            {
+                promo = pieceLetter(move.promotionChoice.value());
+                if (promo == '\0') promo = 'Q';
+            }
+            out << '=' << promo;
+        }
+    }
+    else
+    {
+        // Determine disambiguation
+        bool needFile = false;
+        bool needRank = false;
+
+        // Search for other pieces of same type & color that could move to target
+        int candidates = 0;
+        for (int r = 0; r < Tiles; ++r)
+        {
+            for (int c = 0; c < Tiles; ++c)
+            {
+                if (r == move.r1 && c == move.c1) continue;
+                const Piece* p = at(r, c);
+                if (!p) continue;
+                if (p->type() != pt) continue;
+                if (p->color() != move.movedColor) continue;
+
+                // Quick movement rule check
+                if (!p->isValidMove(move.r2, move.c2, *this)) continue;
+
+                // Use wouldMoveBeLegal to ensure legality (checks for checks)
+                if (wouldMoveBeLegal(r, c, move.r2, move.c2))
+                {
+                    candidates++;
+                    if (c != move.c1) needFile = true;
+                    if (r != move.r1) needRank = true;
+                }
+            }
+        }
+
+        out << pLetter;
+
+        if (candidates > 0)
+        {
+            if (needFile && !needRank) out << (char)('a' + move.c1);
+            else if (!needFile && needRank) out << (char)('1' + (7 - move.r1));
+            else if (needFile && needRank) out << (char)('a' + move.c1) << (char)('1' + (7 - move.r1));
+            else out << (char)('a' + move.c1); // fallback
+        }
+
+        if (isCapture) out << 'x';
+        out << squareName(move.r2, move.c2);
+
+        // Promotion unlikely for non-pawn; ignore
+    }
+
+    // Determine check or checkmate after move: current turn is opponent because move already toggled
+    Board::GameState gs = getGameState();
+    if (gs == GameState::Checkmate)
+    {
+        out << '#';
+    }
+    else
+    {
+        if (isInCheck(getCurrentTurn())) out << '+';
+    }
+
+    return out.str();
+}
+
+//void Board::runFENTests()
+//{
+//    const std::vector<std::string> tests = {
+//        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+//        "r1bqkbnr/pppp1ppp/2n5/3Pp3/8/8/PPP1PPPP/RNBQKBNR w KQkq e6 0 3",
+//        "8/4P3/8/8/8/8/k6K/8 w - - 0 50",
+//        "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"
+//    };
+//
+//    for (const auto &fen : tests)
+//    {
+//        bool ok = loadFromFEN(fen);
+//        std::string out = getFEN();
+//        if (!ok)
+//        {
+//            std::cout << "FEN TEST FAIL (parse): " << fen << std::endl;
+//        }
+//        else if (out == fen)
+//        {
+//            std::cout << "FEN TEST PASS: " << fen << std::endl;
+//        }
+//        else
+//        {
+//            std::cout << "FEN TEST FAIL (round-trip)\n  expected: " << fen << "\n  got:      " << out << std::endl;
+//        }
+//    }
+//}
 
 std::string Board::getFEN() const
 {
@@ -230,11 +404,27 @@ bool Board::loadFromFEN(const std::string& fen)
     m_redoStack.clear();
     m_lastMove.reset();
     m_isAwaitingPromotion = false;
+    // Clear position and SAN histories and add initial position
+    m_positionHistory.clear();
+    m_sanHistory.clear();
     m_currentTurn = newTurn;
     m_castlingRights = newCastling;
     m_enPassantTarget = newEP;
     m_halfmoveClock = newHalf;
     m_fullmoveNumber = newFull;
+
+    // Record initial position key
+    std::string fenOut = getFEN();
+    // Extract first 4 fields
+    {
+        std::istringstream iss(fenOut);
+        std::string a,b,c,d;
+        if (iss >> a >> b >> c >> d)
+        {
+            std::string key = a + " " + b + " " + c + " " + d;
+            m_positionHistory.push_back(key);
+        }
+    }
 
     return true;
 }
@@ -323,6 +513,21 @@ bool Board::hasLegalMoves(PieceColor color)
 
 Board::GameState Board::getGameState() const
 {
+    // 50-move rule (halfmoves >= 100)
+    if (m_halfmoveClock >= 100) return GameState::DrawBy50Moves;
+
+    // Threefold repetition: current position key appears at least 3 times
+    std::string key = getPositionKey();
+    if (!key.empty())
+    {
+        int count = 0;
+        for (const auto &k : m_positionHistory) if (k == key) ++count;
+        if (count >= 3) return GameState::DrawByRepetition;
+    }
+
+    // Insufficient material
+    if (hasInsufficientMaterial()) return GameState::DrawByMaterial;
+
     if (hasLegalMoves(m_currentTurn)) return GameState::Active;
     if (isInCheck(m_currentTurn)) return GameState::Checkmate;
     return GameState::Stalemate;
@@ -628,6 +833,19 @@ Board::MoveResult Board::movePiece(int startRow, int startCol, int endRow, int e
         m_isAwaitingPromotion = true;
         m_pendingPromotionSquare = { endRow, endCol };
         // Do not toggle turn yet; completion will toggle
+        // Record position key and SAN even for pending promotion
+        {
+            std::string fenKey = getFEN();
+            std::istringstream iss(fenKey);
+            std::string a,b,c,d;
+            if (iss >> a >> b >> c >> d)
+            {
+                m_positionHistory.push_back(a + " " + b + " " + c + " " + d);
+            }
+        }
+        // SAN for pending promotion
+        m_sanHistory.push_back(moveToSAN(mv));
+
         return MoveResult::Promotion;
     }
 
@@ -746,6 +964,63 @@ std::optional<Board::ChessMove> Board::getLastMove() const
     return m_lastMove;
 }
 
+std::string Board::getPositionKey() const
+{
+    std::string fen = getFEN();
+    std::istringstream iss(fen);
+    std::string a,b,c,d;
+    if (iss >> a >> b >> c >> d)
+    {
+        return a + " " + b + " " + c + " " + d;
+    }
+    return std::string();
+}
+
+bool Board::hasInsufficientMaterial() const
+{
+    // Count pieces
+    int wP=0,wR=0,wQ=0,wB=0,wN=0,wK=0;
+    int bP=0,bR=0,bQ=0,bB=0,bN=0,bK=0;
+    for (int r = 0; r < Tiles; ++r)
+    {
+        for (int c = 0; c < Tiles; ++c)
+        {
+            const Piece* p = at(r,c);
+            if (!p) continue;
+            if (p->color() == PieceColor::White)
+            {
+                switch (p->type()) { case PieceType::Pawn: wP++; break; case PieceType::Rook: wR++; break; case PieceType::Queen: wQ++; break; case PieceType::Bishop: wB++; break; case PieceType::Knight: wN++; break; case PieceType::King: wK++; break; }
+            }
+            else
+            {
+                switch (p->type()) { case PieceType::Pawn: bP++; break; case PieceType::Rook: bR++; break; case PieceType::Queen: bQ++; break; case PieceType::Bishop: bB++; break; case PieceType::Knight: bN++; break; case PieceType::King: bK++; break; }
+            }
+        }
+    }
+
+    // Any pawns, rooks, queens => sufficient material
+    if (wP || bP || wR || bR || wQ || bQ) return false;
+
+    int minorTotal = wB + wN + bB + bN;
+    // Only kings
+    if (minorTotal == 0) return true;
+
+    // Single minor piece vs king
+    if (minorTotal == 1)
+    {
+        return true; // K+B v K or K+N v K
+    }
+
+    // Two knights vs king (one side has two knights and nothing else)
+    if ((wN == 2 && wB==0 && wP==0 && wR==0 && wQ==0 && bN==0 && bB==0 && bP==0 && bR==0 && bQ==0)
+        || (bN == 2 && bB==0 && bP==0 && bR==0 && bQ==0 && wN==0 && wB==0 && wP==0 && wR==0 && wQ==0))
+    {
+        return true;
+    }
+
+    return false;
+}
+
 // (Removed updateClocksFromHistory — clocks are now updated incrementally per-move)
 
 Board::MoveResult Board::completePromotion(PieceType chosenType)
@@ -837,6 +1112,10 @@ void Board::undoMove()
     m_halfmoveClock = mv.halfmoveClockBefore;
     m_fullmoveNumber = mv.fullmoveNumberBefore;
 
+    // Pop position/SAN history last entries (if present)
+    if (!m_positionHistory.empty()) m_positionHistory.pop_back();
+    if (!m_sanHistory.empty()) m_sanHistory.pop_back();
+
     // Update last move to most recent in history (or clear if none)
     if (!m_moveHistory.empty()) m_lastMove = m_moveHistory.back(); else m_lastMove.reset();
 }
@@ -925,6 +1204,18 @@ void Board::redoMove()
 
     // Update last move to this redo'd move
     m_lastMove = mv;
+
+    // Record position key and SAN for redo'd move
+    {
+        std::string fenKey = getFEN();
+        std::istringstream iss(fenKey);
+        std::string a,b,c,d;
+        if (iss >> a >> b >> c >> d)
+        {
+            m_positionHistory.push_back(a + " " + b + " " + c + " " + d);
+        }
+    }
+    m_sanHistory.push_back(moveToSAN(mv));
 }
 
 PieceColor Board::getCurrentTurn() const

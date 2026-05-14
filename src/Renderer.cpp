@@ -174,6 +174,18 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
         status = "CHECKMATE - ";
         status += (winner == PieceColor::White) ? "White Wins!" : "Black Wins!";
     }
+    else if (gs == Board::GameState::DrawBy50Moves)
+    {
+        status = "DRAW BY 50-MOVE RULE";
+    }
+    else if (gs == Board::GameState::DrawByRepetition)
+    {
+        status = "DRAW BY THREEFOLD REPETITION";
+    }
+    else if (gs == Board::GameState::DrawByMaterial)
+    {
+        status = "DRAW BY INSUFFICIENT MATERIAL";
+    }
     else // Stalemate
     {
         status = "Stalemate - Draw";
@@ -185,7 +197,8 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     DrawText(status.c_str(), sx, sy, STATUS_FONT_SIZE, statusColor);
 
     // Game over overlay (checkmate or stalemate)
-    if (gs == Board::GameState::Checkmate || gs == Board::GameState::Stalemate)
+    if (gs == Board::GameState::Checkmate || gs == Board::GameState::Stalemate ||
+        gs == Board::GameState::DrawBy50Moves || gs == Board::GameState::DrawByRepetition || gs == Board::GameState::DrawByMaterial)
     {
         // Full-screen translucent black
         DrawRectangle(0, 0, m_windowSize, m_windowSize, {0,0,0,160});

@@ -1,6 +1,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <iostream>
 
 #include "raylib.h"
 #include "resource_dir.h" // utility to find assets folder
@@ -33,6 +34,8 @@ int main()
     Sound sndPromote = LoadSound("promote.mp3");
 
     Board board;
+    // Run self-tests for FEN round-trip then initialize the standard setup
+    //board.runFENTests();
     board.initializeStandardSetup();
 
     Renderer renderer(WINDOW_SIZE, TILE_SIZE);
@@ -160,7 +163,8 @@ int main()
                             {
                                 PlaySound(sndMoveSelf);
                             }
-							std::printf("%s\n", board.getFEN().c_str());
+				// Print full PGN transcript
+				std::cout << "--- GAME PGN ---\n" << board.getFullPGNText() << "\n----------------" << std::endl;
                         }
                         else
                         {
@@ -177,7 +181,7 @@ int main()
                                 selected.reset();
                         }
                     }
-					//std::printf("%s\n", board.getFEN().c_str());
+					std::printf("%s\n", board.getFEN().c_str());
                 }
             }
             else
