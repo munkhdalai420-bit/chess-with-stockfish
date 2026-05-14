@@ -26,9 +26,17 @@ public:
     // to allow checking for blocking pieces and captures.
     virtual bool isValidMove(int targetRow, int targetCol, const class Board& board) const;
 
+    // Movement state
+    bool hasMoved() const;
+    void setMoved(bool moved);
+
+    // Change piece type (used for promotion)
+    void setType(PieceType type);
+
 private:
     PieceType m_type;
     PieceColor m_color;
     int m_row;
     int m_col;
+    bool m_hasMoved = false;
 };

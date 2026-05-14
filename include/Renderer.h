@@ -18,7 +18,7 @@ public:
     bool loadTextures();
 
     // Render the board and pieces. 'selected' is an optional board coordinate {row, col}
-    void render(const Board& board, const std::optional<std::pair<int,int>>& selected) const;
+    void render(Board& board, const std::optional<std::pair<int,int>>& selected) const;
 
 private:
     int m_windowSize;
@@ -32,8 +32,8 @@ private:
     std::string textureFilenameForKey(const std::string& key) const;
     const Texture2D* textureForKey(const std::string& key) const;
 
-    void drawBoard(const Board& board, const std::optional<std::pair<int,int>>& selected) const;
-    void drawPieces(const Board& board) const;
+    void drawBoard(Board& board, const std::optional<std::pair<int,int>>& selected) const;
+    void drawPieces(Board& board) const;
     // Helpers
     int tileLeft(int col) const;
     int tileTop(int row) const;

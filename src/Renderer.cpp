@@ -101,9 +101,54 @@ bool Renderer::loadTextures()
     return true;
 }
 
-void Renderer::render(const Board& board, const std::optional<std::pair<int,int>>& selected) const
+void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& selected) const
 {
     drawBoard(board, selected);
+
+    // Move hint overlays: show legal destinations for the currently selected piece
+    if (selected.has_value())
+    {
+        auto [sr, sc] = selected.value();
+        const Piece* sel = board.at(sr, sc);
+        if (sel && sel->color() == board.getCurrentTurn())
+        {
+            // Colors for hints
+            const Color hintFill = { 0, 0, 0, 40 };
+            const Color hintRing = { 0, 0, 0, 80 };
+
+            for (int tr = 0; tr < Board::Tiles; ++tr)
+            {
+                for (int tc = 0; tc < Board::Tiles; ++tc)
+                {
+                    if (tr == sr && tc == sc) continue;
+
+                    // Use a full, transactional legality check via Board to ensure
+                    // moves that leave the king in check are excluded. Board will
+                    // simulate and restore its state.
+                    if (!board.wouldMoveBeLegal(sr, sc, tr, tc)) continue;
+
+                    // Destination center
+                    int cx = tileLeft(tc) + m_tileSize / 2;
+                    int cy = tileTop(tr) + m_tileSize / 2;
+
+                    const Piece* dest = board.at(tr, tc);
+                    if (dest && dest->color() != sel->color())
+                    {
+                        // Capture hint: draw a larger ring
+                        float radius = (float)m_tileSize * 0.35f;
+                        DrawCircleLines(cx, cy, (int)radius, hintRing);
+                    }
+                    else
+                    {
+                        // Normal move hint: small filled circle
+                        float radius = (float)m_tileSize * 0.12f;
+                        DrawCircle(cx, cy, radius, hintFill);
+                    }
+                }
+            }
+        }
+    }
+
     drawPieces(board);
     // Draw status text (turn, check, checkmate)
     // Keep this after pieces so it appears on top
@@ -138,9 +183,51 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
     int sx = (m_windowSize - sw) / 2;
     int sy = 8;
     DrawText(status.c_str(), sx, sy, STATUS_FONT_SIZE, statusColor);
+
+    // Promotion overlay
+    if (board.isAwaitingPromotion())
+    {
+        // Draw a centered row of 4 piece icons for the player's color
+        auto pending = board.getPendingPromotionSquare();
+        const Piece* p = board.at(pending.first, pending.second);
+        PieceColor color = p ? p->color() : board.getCurrentTurn();
+
+        const int ICON_SIZE = 64;
+        const int PAD = 12;
+        const int COUNT = 4;
+        int totalW = COUNT * ICON_SIZE + (COUNT - 1) * PAD;
+        int startX = (m_windowSize - totalW) / 2;
+        int y = (m_windowSize - ICON_SIZE) / 2;
+
+        // Background: solid, slightly translucent rectangle so the board doesn't distract
+        const Color promoBg = { 0, 0, 0, 220 };
+        Rectangle bgRect = { (float)(startX - 8), (float)(y - 8), (float)(totalW + 16), (float)(ICON_SIZE + 16) };
+        DrawRectangleRec(bgRect, promoBg);
+
+        const std::vector<char> pieces = {'q','r','b','n'};
+        char colorChar = (color == PieceColor::White) ? 'l' : 'd';
+        for (int i = 0; i < COUNT; ++i)
+        {
+            int x = startX + i * (ICON_SIZE + PAD);
+            std::string key;
+            key.push_back(pieces[i]);
+            key.push_back(colorChar);
+            const Texture2D* tex = textureForKey(key);
+            if (!tex) continue;
+
+            float srcW = (float)tex->width;
+            float srcH = (float)tex->height;
+            float scale = std::min((float)ICON_SIZE / srcW, (float)ICON_SIZE / srcH);
+            float drawW = srcW * scale;
+            float drawH = srcH * scale;
+            Rectangle srcRec = {0,0,srcW,srcH};
+            Rectangle dstRec = {(float)(x + ICON_SIZE/2 - drawW/2), (float)(y + ICON_SIZE/2 - drawH/2), drawW, drawH};
+            DrawTexturePro(*tex, srcRec, dstRec, {0,0}, 0.0f, WHITE);
+        }
+    }
 }
 
-void Renderer::drawBoard(const Board& board, const std::optional<std::pair<int,int>>& selected) const
+void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& selected) const
 {
     // Colors for the board
     const Color lightColor = {240, 217, 181, 255};
@@ -193,52 +280,48 @@ void Renderer::drawBoard(const Board& board, const std::optional<std::pair<int,i
         }
     }
 
-    // Draw algebraic notation labels around the board (white perspective):
-    // files: a..h along bottom (rank 1) and top (rank 8)
-    // ranks: 1..8 along left and right edges
-    const int LABEL_MARGIN = 18; // distance from board edge
+    // Draw algebraic notation labels only on the leftmost file (rank numbers)
+    // and on the bottom rank (file letters). Labels are subtle and use an
+    // inverted color relative to the tile for legibility.
     const int LABEL_FONT_SIZE = 20;
-    const Color labelColor = WHITE;
+    const int SMALL_FONT = LABEL_FONT_SIZE / 2; // use smaller font
+    const int PADDING = 6;
 
-    // Files (letters)
     const char files[] = "abcdefgh";
-    for (int c = 0; c < Board::Tiles; ++c)
-    {
-        char fileChar = files[c];
-        char fileStr[2] = { fileChar, '\0' };
-        int textW = MeasureText(fileStr, LABEL_FONT_SIZE);
 
-        // Top
-        int topX = tileLeft(c) + (m_tileSize / 2) - (textW / 2);
-        int topY = m_boardOriginY - LABEL_MARGIN - LABEL_FONT_SIZE;
-        DrawText(fileStr, topX, topY, LABEL_FONT_SIZE, labelColor);
-
-        // Bottom
-        int bottomX = topX;
-        int bottomY = m_boardOriginY + m_boardPixelSize + LABEL_MARGIN / 2;
-        DrawText(fileStr, bottomX, bottomY, LABEL_FONT_SIZE, labelColor);
-    }
-
-    // Ranks (numbers)
+    // Ranks on leftmost file 'a' (top-left of the tile)
     for (int r = 0; r < Board::Tiles; ++r)
     {
         int rank = Board::Tiles - r; // 8..1 from top to bottom
         std::string rankStr = std::to_string(rank);
-        int textW = MeasureText(rankStr.c_str(), LABEL_FONT_SIZE);
 
-        int y = tileTop(r) + (m_tileSize / 2) - (LABEL_FONT_SIZE / 2);
+        // Determine tile color for inversion
+        bool isLight = ((r + 0) % 2) == 0; // c == 0 (file a)
+        const Color textColor = isLight ? darkColor : lightColor;
 
-        // Left (right-aligned)
-        int leftX = m_boardOriginX - LABEL_MARGIN - textW;
-        DrawText(rankStr.c_str(), leftX, y, LABEL_FONT_SIZE, labelColor);
+        int x = tileLeft(0) + PADDING;
+        int y = tileTop(r) + PADDING;
+        DrawText(rankStr.c_str(), x, y, SMALL_FONT, textColor);
+    }
 
-        // Right (left-aligned)
-        int rightX = m_boardOriginX + m_boardPixelSize + LABEL_MARGIN / 2;
-        DrawText(rankStr.c_str(), rightX, y, LABEL_FONT_SIZE, labelColor);
+    // Files on bottom-most rank '1' (bottom-right corner of the tile)
+    int bottomRow = Board::Tiles - 1; // row index 7
+    for (int c = 0; c < Board::Tiles; ++c)
+    {
+        char fileChar = files[c];
+        char fileStr[2] = { fileChar, '\0' };
+
+        bool isLight = ((bottomRow + c) % 2) == 0;
+        const Color textColor = isLight ? darkColor : lightColor;
+
+        int textW = MeasureText(fileStr, SMALL_FONT);
+        int x = tileLeft(c) + m_tileSize - textW - PADDING;
+        int y = tileTop(bottomRow) + m_tileSize - SMALL_FONT - PADDING / 2;
+        DrawText(fileStr, x, y, SMALL_FONT, textColor);
     }
 }
 
-void Renderer::drawPieces(const Board& board) const
+void Renderer::drawPieces(Board& board) const
 {
     for (int r = 0; r < Board::Tiles; ++r)
     {

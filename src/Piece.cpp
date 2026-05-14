@@ -9,6 +9,11 @@ Piece::Piece(PieceType type, PieceColor color, int row, int col)
 {
 }
 
+bool Piece::hasMoved() const { return m_hasMoved; }
+void Piece::setMoved(bool moved) { m_hasMoved = moved; }
+
+void Piece::setType(PieceType type) { m_type = type; }
+
 namespace {
     // Helper: check straight-line path (rook-like) is clear between start and end
     bool isStraightPathClear(const Board& board, int sr, int sc, int er, int ec)
@@ -108,7 +113,19 @@ bool Piece::isValidMove(int targetRow, int targetCol, const Board& board) const
         // Diagonal capture
         if ((targetCol == sc + 1 || targetCol == sc - 1) && targetRow == sr + dir)
         {
-            return (dest != nullptr && dest->color() != m_color);
+            // Normal capture
+            if (dest != nullptr && dest->color() != m_color) return true;
+
+            // En passant capture: destination empty but matches board's en passant target
+            auto ep = board.getEnPassantTarget();
+            if (ep.first == targetRow && ep.second == targetCol)
+            {
+                // The captured pawn is located on the starting row, in the target column
+                const Piece* cap = board.at(sr, targetCol);
+                if (cap && cap->type() == PieceType::Pawn && cap->color() != m_color)
+                    return true;
+            }
+            return false;
         }
 
         return false;
@@ -143,6 +160,37 @@ bool Piece::isValidMove(int targetRow, int targetCol, const Board& board) const
         {
             return true; // capture handled by top-of-function color check
         }
+
+        // Castling: two-square horizontal move
+        if (dr == 0 && dc == 2)
+        {
+            // King must not have moved
+            if (m_hasMoved) return false;
+
+            int rookCol = (targetCol > sc) ? 7 : 0;
+            const Piece* rook = board.at(sr, rookCol);
+            if (!rook) return false;
+            if (rook->type() != PieceType::Rook) return false;
+            if (rook->color() != m_color) return false;
+            // Rook must not have moved
+            if (rook->hasMoved()) return false;
+
+            int step = (targetCol > sc) ? 1 : -1;
+            // Squares between king and rook must be empty
+            for (int c = sc + step; c != rookCol; c += step)
+            {
+                if (board.at(sr, c) != nullptr) return false;
+            }
+
+            // King must not be in check, and cannot pass through or land on attacked square
+            PieceColor opponent = (m_color == PieceColor::White) ? PieceColor::Black : PieceColor::White;
+            if (board.isInCheck(m_color)) return false;
+            if (board.isSquareUnderAttack(sr, sc + step, opponent)) return false;
+            if (board.isSquareUnderAttack(sr, targetCol, opponent)) return false;
+
+            return true;
+        }
+
         return false;
     }
     default:

@@ -34,8 +34,53 @@ int main()
 
     while (!WindowShouldClose())
     {
-        // Input: handle mouse clicks to select a piece and attempt moves
-        if (board.getGameState() == Board::GameState::Active && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+        // Undo/Redo keys
+        if (IsKeyPressed(KEY_U))
+        {
+            board.undoMove();
+            selected.reset();
+        }
+        if (IsKeyPressed(KEY_R))
+        {
+            board.redoMove();
+            selected.reset();
+        }
+
+        // Promotion selection handling: if awaiting promotion, capture clicks for promotion choice
+        if (board.isAwaitingPromotion())
+        {
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+            {
+                Vector2 mp = GetMousePosition();
+                const int ICON_SIZE = 64;
+                const int PAD = 12;
+                const int COUNT = 4;
+                int totalW = COUNT * ICON_SIZE + (COUNT - 1) * PAD;
+                int startX = (WINDOW_SIZE - totalW) / 2;
+                int y = (WINDOW_SIZE - ICON_SIZE) / 2;
+
+                for (int i = 0; i < COUNT; ++i)
+                {
+                    int x = startX + i * (ICON_SIZE + PAD);
+                    Rectangle rect = { (float)x, (float)y, (float)ICON_SIZE, (float)ICON_SIZE };
+                    if (CheckCollisionPointRec(mp, rect))
+                    {
+                        PieceType choice = PieceType::Queen;
+                        switch (i)
+                        {
+                        case 0: choice = PieceType::Queen; break;
+                        case 1: choice = PieceType::Rook; break;
+                        case 2: choice = PieceType::Bishop; break;
+                        case 3: choice = PieceType::Knight; break;
+                        }
+                        board.completePromotion(choice);
+                        selected.reset();
+                        break;
+                    }
+                }
+            }
+        }
+        else if (board.getGameState() == Board::GameState::Active && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
         {
             Vector2 mp = GetMousePosition();
             int boardPixelSize = TILE_SIZE * Board::Tiles;
