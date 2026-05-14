@@ -1,7 +1,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <iostream>
 
 #include "raylib.h"
 #include "resource_dir.h" // utility to find assets folder
@@ -163,8 +162,13 @@ int main()
                             {
                                 PlaySound(sndMoveSelf);
                             }
-				// Print full PGN transcript
-				std::cout << "--- GAME PGN ---\n" << board.getFullPGNText() << "\n----------------" << std::endl;
+				// Print move SAN
+				auto last = board.getLastMove();
+				if (last.has_value())
+				{
+					std::string san = board.moveToSAN(last.value());
+					std::printf("Move played: %s\n", san.c_str());
+				}
                         }
                         else
                         {
