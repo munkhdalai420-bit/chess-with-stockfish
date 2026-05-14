@@ -337,6 +337,13 @@
     <Image Include="..\..\Chess_rdt45.png" />
     <Image Include="..\..\Chess_rlt45.png" />
   </ItemGroup>
+  <ItemGroup>
+    <Media Include="resources\capture.mp3" />
+    <Media Include="resources\castle.mp3" />
+    <Media Include="resources\move-check.mp3" />
+    <Media Include="resources\move-self.mp3" />
+    <Media Include="resources\promote.mp3" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

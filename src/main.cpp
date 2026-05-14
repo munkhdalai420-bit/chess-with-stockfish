@@ -22,6 +22,16 @@ int main()
     // Set working directory to assets folder if available
     SearchAndSetResourceDir("resources");
 
+    // Initialize audio
+    InitAudioDevice();
+
+    // Load sounds
+    Sound sndCapture = LoadSound("capture.mp3");
+    Sound sndCastle = LoadSound("castle.mp3");
+    Sound sndMoveCheck = LoadSound("move-check.mp3");
+    Sound sndMoveSelf = LoadSound("move-self.mp3");
+    Sound sndPromote = LoadSound("promote.mp3");
+
     Board board;
     board.initializeStandardSetup();
 
@@ -35,14 +45,22 @@ int main()
     while (!WindowShouldClose())
     {
         // Undo/Redo keys
-        if (IsKeyPressed(KEY_U))
+        if (IsKeyPressed(KEY_LEFT))
         {
             board.undoMove();
             selected.reset();
         }
-        if (IsKeyPressed(KEY_R))
+        if (IsKeyPressed(KEY_RIGHT))
         {
             board.redoMove();
+            selected.reset();
+        }
+
+        // Restart
+        if (IsKeyPressed(KEY_R))
+        {
+            board = Board();
+            board.initializeStandardSetup();
             selected.reset();
         }
 
@@ -73,7 +91,11 @@ int main()
                         case 2: choice = PieceType::Bishop; break;
                         case 3: choice = PieceType::Knight; break;
                         }
-                        board.completePromotion(choice);
+                        Board::MoveResult pres = board.completePromotion(choice);
+                        if (pres == Board::MoveResult::Promotion)
+                        {
+                            PlaySound(sndPromote);
+                        }
                         selected.reset();
                         break;
                     }
@@ -112,10 +134,33 @@ int main()
                     else
                     {
                         // Attempt move from selected -> clicked
-                        bool moved = board.movePiece(sr, sc, row, col);
-                        if (moved)
+                        Board::MoveResult res = board.movePiece(sr, sc, row, col);
+                        if (res != Board::MoveResult::Invalid)
                         {
                             selected.reset();
+
+                            // Play sounds for non-promotion moves immediately
+                            if (res == Board::MoveResult::Check)
+                            {
+                                PlaySound(sndMoveCheck);
+                            }
+                            else if (res == Board::MoveResult::Castle)
+                            {
+                                PlaySound(sndCastle);
+                            }
+                            else if (res == Board::MoveResult::Capture)
+                            {
+                                PlaySound(sndCapture);
+                            }
+                            else if (res == Board::MoveResult::Promotion)
+                            {
+                                // Promotion pending; wait for user to confirm choice and play promote then
+                            }
+                            else
+                            {
+                                PlaySound(sndMoveSelf);
+                            }
+							std::printf("%s\n", board.getFEN().c_str());
                         }
                         else
                         {
@@ -132,6 +177,7 @@ int main()
                                 selected.reset();
                         }
                     }
+					//std::printf("%s\n", board.getFEN().c_str());
                 }
             }
             else
@@ -155,6 +201,13 @@ int main()
 
         EndDrawing();
     }
+    // Unload sounds and shut down audio
+    UnloadSound(sndCapture);
+    UnloadSound(sndCastle);
+    UnloadSound(sndMoveCheck);
+    UnloadSound(sndMoveSelf);
+    UnloadSound(sndPromote);
+    CloseAudioDevice();
 
     CloseWindow();
     return 0;

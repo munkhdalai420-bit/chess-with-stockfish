@@ -12,6 +12,231 @@ Board::Board()
     m_currentTurn = PieceColor::White;
     m_lastMoveError.clear();
     m_enPassantTarget = std::make_pair(-1, -1);
+    // Default starting castling rights (both sides)
+    m_castlingRights = (uint8_t)(Board::CR_WHITE_K | Board::CR_WHITE_Q | Board::CR_BLACK_K | Board::CR_BLACK_Q);
+}
+
+std::string Board::getFEN() const
+{
+    // Piece placement
+    std::string fen;
+    for (int r = 0; r < Tiles; ++r)
+    {
+        int empty = 0;
+        for (int c = 0; c < Tiles; ++c)
+        {
+            const Piece* p = at(r, c);
+            if (!p)
+            {
+                empty++;
+            }
+            else
+            {
+                if (empty > 0) { fen.push_back('0' + empty); empty = 0; }
+                char ch = 'p';
+                switch (p->type())
+                {
+                case PieceType::King: ch = 'k'; break;
+                case PieceType::Queen: ch = 'q'; break;
+                case PieceType::Rook: ch = 'r'; break;
+                case PieceType::Bishop: ch = 'b'; break;
+                case PieceType::Knight: ch = 'n'; break;
+                case PieceType::Pawn: ch = 'p'; break;
+                }
+                if (p->color() == PieceColor::White) ch = (char)toupper(ch);
+                fen.push_back(ch);
+            }
+        }
+        if (empty > 0) { fen.push_back('0' + empty); }
+        if (r != Tiles - 1) fen.push_back('/');
+    }
+
+    // Active color
+    fen.push_back(' ');
+    fen.push_back((m_currentTurn == PieceColor::White) ? 'w' : 'b');
+
+    // Castling availability from board-level castling rights
+    fen.push_back(' ');
+    std::string castling;
+    if (m_castlingRights & Board::CR_WHITE_K) castling.push_back('K');
+    if (m_castlingRights & Board::CR_WHITE_Q) castling.push_back('Q');
+    if (m_castlingRights & Board::CR_BLACK_K) castling.push_back('k');
+    if (m_castlingRights & Board::CR_BLACK_Q) castling.push_back('q');
+    if (castling.empty()) fen.push_back('-'); else fen += castling;
+
+    // En passant target
+    fen.push_back(' ');
+    if (m_enPassantTarget.first < 0)
+    {
+        fen.push_back('-');
+    }
+    else
+    {
+        int er = m_enPassantTarget.first;
+        int ec = m_enPassantTarget.second;
+        char file = 'a' + ec;
+        char rank = '0' + (8 - er);
+        fen.push_back(file);
+        fen.push_back(rank);
+    }
+
+    // Halfmove and fullmove
+    fen.push_back(' ');
+    fen += std::to_string(m_halfmoveClock);
+    fen.push_back(' ');
+    fen += std::to_string(m_fullmoveNumber);
+
+    return fen;
+}
+
+bool Board::loadFromFEN(const std::string& fen)
+{
+    // Parse into temporaries first. If any parse error occurs, abort and
+    // leave the current board untouched.
+    std::vector<std::string> parts;
+    {
+        std::string tmp;
+        for (char ch : fen)
+        {
+            if (ch == ' ')
+            {
+                if (!tmp.empty()) { parts.push_back(tmp); tmp.clear(); }
+            }
+            else tmp.push_back(ch);
+        }
+        if (!tmp.empty()) parts.push_back(tmp);
+    }
+    if (parts.size() != 6) return false;
+
+    // Temporary storage for squares
+    std::unique_ptr<Piece> newSquares[Tiles][Tiles];
+    // Initialize to null
+    for (int rr = 0; rr < Tiles; ++rr) for (int cc = 0; cc < Tiles; ++cc) newSquares[rr][cc].reset();
+
+    // Piece placement
+    const std::string &placement = parts[0];
+    std::vector<std::string> ranks;
+    {
+        std::string cur;
+        for (char ch : placement)
+        {
+            if (ch == '/') { ranks.push_back(cur); cur.clear(); }
+            else cur.push_back(ch);
+        }
+        if (!cur.empty()) ranks.push_back(cur);
+    }
+    if (ranks.size() != 8) return false;
+
+    for (int rr = 0; rr < 8; ++rr)
+    {
+        const std::string &rowStr = ranks[rr];
+        int c = 0;
+        for (char ch : rowStr)
+        {
+            if (std::isdigit((unsigned char)ch))
+            {
+                int skip = ch - '0';
+                if (skip <= 0 || skip > 8) return false;
+                c += skip;
+            }
+            else
+            {
+                if (c < 0 || c >= Tiles) return false;
+                if (!std::isalpha((unsigned char)ch)) return false;
+                PieceColor color = (std::isupper((unsigned char)ch)) ? PieceColor::White : PieceColor::Black;
+                char lower = (char)std::tolower((unsigned char)ch);
+                PieceType type = PieceType::Pawn;
+                switch (lower)
+                {
+                case 'k': type = PieceType::King; break;
+                case 'q': type = PieceType::Queen; break;
+                case 'r': type = PieceType::Rook; break;
+                case 'b': type = PieceType::Bishop; break;
+                case 'n': type = PieceType::Knight; break;
+                case 'p': type = PieceType::Pawn; break;
+                default: return false;
+                }
+                int rowIndex = rr; // rr=0 is top rank (8)
+                newSquares[rowIndex][c] = std::make_unique<Piece>(type, color, rowIndex, c);
+                c++;
+            }
+        }
+        if (c != Tiles) return false;
+    }
+
+    // Active color
+    PieceColor newTurn = (parts[1].size() > 0 && parts[1][0] == 'b') ? PieceColor::Black : PieceColor::White;
+
+    // Castling availability
+    std::string castling = parts[2];
+    uint8_t newCastling = 0;
+    if (castling == "-") { /* none */ }
+    else
+    {
+        for (char ch : castling)
+        {
+            if (ch == 'K') newCastling |= CR_WHITE_K;
+            else if (ch == 'Q') newCastling |= CR_WHITE_Q;
+            else if (ch == 'k') newCastling |= CR_BLACK_K;
+            else if (ch == 'q') newCastling |= CR_BLACK_Q;
+            else return false; // invalid char
+        }
+    }
+
+    // En passant target
+    std::pair<int,int> newEP = std::make_pair(-1, -1);
+    const std::string &ep = parts[3];
+    if (ep == "-") { /* none */ }
+    else if (ep.size() == 2)
+    {
+        char file = ep[0];
+        char rank = ep[1];
+        if (file < 'a' || file > 'h') return false;
+        if (rank < '1' || rank > '8') return false;
+        int ec = file - 'a';
+        int er = 8 - (rank - '0');
+        if (er < 0 || er >= 8) return false;
+        newEP = std::make_pair(er, ec);
+    }
+    else return false;
+
+    // Halfmove and fullmove
+    int newHalf = 0;
+    int newFull = 1;
+    try { newHalf = std::stoi(parts[4]); } catch (...) { return false; }
+    try { newFull = std::stoi(parts[5]); } catch (...) { return false; }
+
+    // All parsing succeeded; commit to board atomically
+    // Clear existing board
+    for (int rr = 0; rr < Tiles; ++rr) for (int cc = 0; cc < Tiles; ++cc) m_squares[rr][cc].reset();
+    // Move new pieces into place
+    for (int rr = 0; rr < Tiles; ++rr)
+    {
+        for (int cc = 0; cc < Tiles; ++cc)
+        {
+            if (newSquares[rr][cc])
+            {
+                m_squares[rr][cc] = std::move(newSquares[rr][cc]);
+            }
+            else
+            {
+                m_squares[rr][cc].reset();
+            }
+        }
+    }
+
+    // Commit other state
+    m_moveHistory.clear();
+    m_redoStack.clear();
+    m_lastMove.reset();
+    m_isAwaitingPromotion = false;
+    m_currentTurn = newTurn;
+    m_castlingRights = newCastling;
+    m_enPassantTarget = newEP;
+    m_halfmoveClock = newHalf;
+    m_fullmoveNumber = newFull;
+
+    return true;
 }
 
 bool Board::hasLegalMoves(PieceColor color) const
@@ -36,6 +261,8 @@ bool Board::hasLegalMoves(PieceColor color)
     // Also save promotion-awaiting state to avoid leaving UI in a pending state
     bool savedAwaiting = m_isAwaitingPromotion;
     auto savedPending = m_pendingPromotionSquare;
+    // Save castling rights
+    uint8_t savedCastling = m_castlingRights;
 
     // Iterate all pieces of the given color and try every destination.
     for (int sr = 0; sr < Tiles; ++sr)
@@ -59,8 +286,8 @@ bool Board::hasLegalMoves(PieceColor color)
                     // Ensure turn matches the mover
                     m_currentTurn = color;
 
-                    bool moved = movePiece(sr, sc, tr, tc);
-                    if (moved)
+                    MoveResult movedRes = movePiece(sr, sc, tr, tc);
+                    if (movedRes != MoveResult::Invalid)
                     {
                         // Undo to restore state
                         undoMove();
@@ -73,6 +300,7 @@ bool Board::hasLegalMoves(PieceColor color)
                         m_lastMoveError = savedLastError;
                         m_isAwaitingPromotion = savedAwaiting;
                         m_pendingPromotionSquare = savedPending;
+                        m_castlingRights = savedCastling;
 
                         return true;
                     }
@@ -85,6 +313,7 @@ bool Board::hasLegalMoves(PieceColor color)
                     m_lastMoveError = savedLastError;
                     m_isAwaitingPromotion = savedAwaiting;
                     m_pendingPromotionSquare = savedPending;
+                    m_castlingRights = savedCastling;
                 }
             }
         }
@@ -109,39 +338,39 @@ std::pair<int,int> Board::getEnPassantTarget() const
     return m_enPassantTarget;
 }
 
-bool Board::movePiece(int startRow, int startCol, int endRow, int endCol)
+Board::MoveResult Board::movePiece(int startRow, int startCol, int endRow, int endCol)
 {
     // Basic bounds
     if (startRow < 0 || startRow >= Tiles || startCol < 0 || startCol >= Tiles)
     {
         m_lastMoveError = "Invalid source coordinates";
-        return false;
+        return MoveResult::Invalid;
     }
     if (endRow < 0 || endRow >= Tiles || endCol < 0 || endCol >= Tiles)
     {
         m_lastMoveError = "Invalid destination coordinates";
-        return false;
+        return MoveResult::Invalid;
     }
 
     Piece* p = at(startRow, startCol);
     if (!p)
     {
         m_lastMoveError = "No piece at source square";
-        return false; // no piece to move
+        return MoveResult::Invalid; // no piece to move
     }
 
     // Check turn
     if (p->color() != m_currentTurn)
     {
         m_lastMoveError = "Not your turn";
-        return false;
+        return MoveResult::Invalid;
     }
 
     // Ensure the piece's movement rules allow this move
     if (!p->isValidMove(endRow, endCol, *this))
     {
         m_lastMoveError = "Invalid move (movement rules or blocked)";
-        return false;
+        return MoveResult::Invalid;
     }
 
     const Piece* dest = at(endRow, endCol);
@@ -149,7 +378,7 @@ bool Board::movePiece(int startRow, int startCol, int endRow, int endCol)
     if (dest && dest->color() == p->color())
     {
         m_lastMoveError = "Cannot capture your own piece";
-        return false;
+        return MoveResult::Invalid;
     }
 
     // Get piece and moving type/color early
@@ -157,7 +386,7 @@ bool Board::movePiece(int startRow, int startCol, int endRow, int endCol)
     if (!piecePtr)
     {
         m_lastMoveError = "No piece at source square";
-        return false;
+        return MoveResult::Invalid;
     }
     PieceType movingType = piecePtr->type();
     PieceColor movingColor = piecePtr->color();
@@ -169,6 +398,11 @@ bool Board::movePiece(int startRow, int startCol, int endRow, int endCol)
     mv.movedColor = movingColor;
     mv.enPassantBefore = m_enPassantTarget;
     mv.movedPieceHadMoved = piecePtr->hasMoved();
+    // Record castling rights before the move
+    mv.castlingBefore = m_castlingRights;
+    // Record clocks before the move
+    mv.halfmoveClockBefore = m_halfmoveClock;
+    mv.fullmoveNumberBefore = m_fullmoveNumber;
 
     // Determine captured piece info (normal capture or en passant)
     if (dest)
@@ -267,6 +501,36 @@ bool Board::movePiece(int startRow, int startCol, int endRow, int endCol)
         m_squares[startRow][endCol] = nullptr;
     }
 
+    // Update board-level castling rights based on this move/capture
+    uint8_t newRights = mv.castlingBefore;
+    // If a king moved, clear both rights for that color
+    if (movingType == PieceType::King)
+    {
+        if (movingColor == PieceColor::White) newRights &= ~(Board::CR_WHITE_K | Board::CR_WHITE_Q);
+        else newRights &= ~(Board::CR_BLACK_K | Board::CR_BLACK_Q);
+    }
+    // If a rook moved from a corner, clear the corresponding right
+    if (movingType == PieceType::Rook)
+    {
+        if (startRow == 7 && startCol == 7) newRights &= ~Board::CR_WHITE_K;
+        if (startRow == 7 && startCol == 0) newRights &= ~Board::CR_WHITE_Q;
+        if (startRow == 0 && startCol == 7) newRights &= ~Board::CR_BLACK_K;
+        if (startRow == 0 && startCol == 0) newRights &= ~Board::CR_BLACK_Q;
+    }
+    // If a rook was captured on a corner, clear the corresponding right
+    if (mv.capturedType.has_value() && mv.capturedType.value() == PieceType::Rook)
+    {
+        int cr = endRow;
+        int cc = endCol;
+        // Note: en-passant cannot capture a rook
+        if (cr == 7 && cc == 7) newRights &= ~Board::CR_WHITE_K;
+        if (cr == 7 && cc == 0) newRights &= ~Board::CR_WHITE_Q;
+        if (cr == 0 && cc == 7) newRights &= ~Board::CR_BLACK_K;
+        if (cr == 0 && cc == 0) newRights &= ~Board::CR_BLACK_Q;
+    }
+    mv.castlingAfter = newRights;
+    m_castlingRights = newRights;
+
     // Now check whether this move leaves the mover in check
     if (isInCheck(movingColor))
     {
@@ -292,7 +556,7 @@ bool Board::movePiece(int startRow, int startCol, int endRow, int endCol)
         }
 
         m_lastMoveError = "Move would leave king in check";
-        return false;
+        return MoveResult::Invalid;
     }
 
     // Move succeeded logically. Handle special rules on commit.
@@ -331,6 +595,32 @@ bool Board::movePiece(int startRow, int startCol, int endRow, int endCol)
 
     // Push move onto history
     m_moveHistory.push_back(mv);
+    // Record last committed move
+    m_lastMove = mv;
+
+    // Update clocks incrementally
+    if (isPawn || mv.capturedType.has_value())
+    {
+        m_halfmoveClock = 0;
+    }
+    else
+    {
+        m_halfmoveClock = mv.halfmoveClockBefore + 1;
+    }
+
+    // Increment fullmove number only after Black completes a move (and only if move fully completed — not awaiting promotion)
+    if (!mv.isPromotion)
+    {
+        if (movingColor == PieceColor::Black)
+            m_fullmoveNumber = mv.fullmoveNumberBefore + 1;
+        else
+            m_fullmoveNumber = mv.fullmoveNumberBefore;
+    }
+    else
+    {
+        // For a pending promotion, do not increment fullmoveNumber yet
+        m_fullmoveNumber = mv.fullmoveNumberBefore;
+    }
 
     // If this move is a promotion, wait for player choice before finalizing turn
     if (mv.isPromotion)
@@ -338,14 +628,29 @@ bool Board::movePiece(int startRow, int startCol, int endRow, int endCol)
         m_isAwaitingPromotion = true;
         m_pendingPromotionSquare = { endRow, endCol };
         // Do not toggle turn yet; completion will toggle
-    }
-    else
-    {
-        // Toggle turn
-        m_currentTurn = (m_currentTurn == PieceColor::White) ? PieceColor::Black : PieceColor::White;
+        return MoveResult::Promotion;
     }
 
-    return true;
+    // Toggle turn
+    m_currentTurn = (m_currentTurn == PieceColor::White) ? PieceColor::Black : PieceColor::White;
+
+    // If this move results in the opponent being in check, prioritize that result
+    if (isInCheck(m_currentTurn))
+    {
+        return MoveResult::Check;
+    }
+
+    if (mv.isCastling)
+    {
+        return MoveResult::Castle;
+    }
+
+    if (mv.capturedType.has_value())
+    {
+        return MoveResult::Capture;
+    }
+
+    return MoveResult::Normal;
 }
 
 bool Board::wouldMoveBeLegal(int startRow, int startCol, int endRow, int endCol)
@@ -358,6 +663,7 @@ bool Board::wouldMoveBeLegal(int startRow, int startCol, int endRow, int endCol)
     auto savedLastError = m_lastMoveError;
     bool savedAwaiting = m_isAwaitingPromotion;
     auto savedPending = m_pendingPromotionSquare;
+    uint8_t savedCastling = m_castlingRights;
 
     const Piece* p = at(startRow, startCol);
     if (!p) return false;
@@ -365,8 +671,8 @@ bool Board::wouldMoveBeLegal(int startRow, int startCol, int endRow, int endCol)
     // Ensure movePiece sees the correct turn for the mover
     m_currentTurn = p->color();
 
-    bool moved = movePiece(startRow, startCol, endRow, endCol);
-    if (moved)
+    MoveResult res = movePiece(startRow, startCol, endRow, endCol);
+    if (res != MoveResult::Invalid)
     {
         // Undo the simulated move
         undoMove();
@@ -380,8 +686,9 @@ bool Board::wouldMoveBeLegal(int startRow, int startCol, int endRow, int endCol)
     m_lastMoveError = savedLastError;
     m_isAwaitingPromotion = savedAwaiting;
     m_pendingPromotionSquare = savedPending;
+    m_castlingRights = savedCastling;
 
-    return moved;
+    return (res != MoveResult::Invalid);
 }
 
 bool Board::isSquareUnderAttack(int row, int col, PieceColor attackerColor) const
@@ -434,12 +741,19 @@ std::pair<int,int> Board::getPendingPromotionSquare() const
     return m_pendingPromotionSquare;
 }
 
-void Board::completePromotion(PieceType chosenType)
+std::optional<Board::ChessMove> Board::getLastMove() const
 {
-    if (!m_isAwaitingPromotion || m_moveHistory.empty()) return;
+    return m_lastMove;
+}
+
+// (Removed updateClocksFromHistory — clocks are now updated incrementally per-move)
+
+Board::MoveResult Board::completePromotion(PieceType chosenType)
+{
+    if (!m_isAwaitingPromotion || m_moveHistory.empty()) return MoveResult::Invalid;
 
     ChessMove &mv = m_moveHistory.back();
-    if (!mv.isPromotion) return;
+    if (!mv.isPromotion) return MoveResult::Invalid;
 
     // Apply chosen promotion type to the piece on the board
     int r = mv.r2, c = mv.c2;
@@ -461,7 +775,12 @@ void Board::completePromotion(PieceType chosenType)
     // Toggle turn now
     m_currentTurn = (m_currentTurn == PieceColor::White) ? PieceColor::Black : PieceColor::White;
 
+    // Update last move record now that promotion choice is known
+    if (!m_moveHistory.empty()) m_lastMove = m_moveHistory.back();
+
     m_lastMoveError.clear();
+
+    return MoveResult::Promotion;
 }
 
 void Board::undoMove()
@@ -510,6 +829,16 @@ void Board::undoMove()
 
     // Push onto redo stack
     m_redoStack.push_back(mv);
+
+    // Restore castling rights to before this move
+    m_castlingRights = mv.castlingBefore;
+
+    // Restore clocks
+    m_halfmoveClock = mv.halfmoveClockBefore;
+    m_fullmoveNumber = mv.fullmoveNumberBefore;
+
+    // Update last move to most recent in history (or clear if none)
+    if (!m_moveHistory.empty()) m_lastMove = m_moveHistory.back(); else m_lastMove.reset();
 }
 
 void Board::redoMove()
@@ -570,11 +899,42 @@ void Board::redoMove()
 
     // Push move back onto history
     m_moveHistory.push_back(mv);
+
+    // Restore castling rights to after this move
+    m_castlingRights = mv.castlingAfter;
+
+    // Reapply clocks for this move
+    if (mv.movedType == PieceType::Pawn || mv.capturedType.has_value())
+    {
+        m_halfmoveClock = 0;
+    }
+    else
+    {
+        m_halfmoveClock = mv.halfmoveClockBefore + 1;
+    }
+
+    if (mv.isPromotion)
+    {
+        // promotion keeps fullmove number unchanged until completion
+        m_fullmoveNumber = mv.fullmoveNumberBefore;
+    }
+    else
+    {
+        m_fullmoveNumber = (mv.movedColor == PieceColor::Black) ? (mv.fullmoveNumberBefore + 1) : mv.fullmoveNumberBefore;
+    }
+
+    // Update last move to this redo'd move
+    m_lastMove = mv;
 }
 
 PieceColor Board::getCurrentTurn() const
 {
     return m_currentTurn;
+}
+
+uint8_t Board::getCastlingRights() const
+{
+    return m_castlingRights;
 }
 
 const Piece* Board::at(int row, int col) const
@@ -591,47 +951,37 @@ Piece* Board::at(int row, int col)
 
 void Board::initializeStandardSetup()
 {
-    // Clear board first
-    for (int r = 0; r < Tiles; ++r)
-        for (int c = 0; c < Tiles; ++c)
-            m_squares[r][c].reset();
+    // Use transactional FEN loader to initialize standard starting position.
+    // This ensures the board state, clocks, castling rights and en-passant
+    // target are all set consistently and atomically.
+    const std::string startFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    bool ok = loadFromFEN(startFEN);
 
-    // Helper to place piece
-    auto place = [&](PieceType type, PieceColor color, int row, int col)
+    // Ensure any remaining runtime state is reset for a fresh game.
+    if (ok)
     {
-        m_squares[row][col] = std::make_unique<Piece>(type, color, row, col);
-    };
-
-    // Pawns
-    for (int c = 0; c < Tiles; ++c)
-    {
-        place(PieceType::Pawn, PieceColor::White, 6, c);
-        place(PieceType::Pawn, PieceColor::Black, 1, c);
+        m_lastMoveError.clear();
+        m_isAwaitingPromotion = false;
+        m_pendingPromotionSquare = {-1, -1};
+        // move history/redo cleared by loadFromFEN; ensure lastMove cleared
+        m_lastMove.reset();
     }
-
-    // Rooks
-    place(PieceType::Rook, PieceColor::White, 7, 0);
-    place(PieceType::Rook, PieceColor::White, 7, 7);
-    place(PieceType::Rook, PieceColor::Black, 0, 0);
-    place(PieceType::Rook, PieceColor::Black, 0, 7);
-
-    // Knights
-    place(PieceType::Knight, PieceColor::White, 7, 1);
-    place(PieceType::Knight, PieceColor::White, 7, 6);
-    place(PieceType::Knight, PieceColor::Black, 0, 1);
-    place(PieceType::Knight, PieceColor::Black, 0, 6);
-
-    // Bishops
-    place(PieceType::Bishop, PieceColor::White, 7, 2);
-    place(PieceType::Bishop, PieceColor::White, 7, 5);
-    place(PieceType::Bishop, PieceColor::Black, 0, 2);
-    place(PieceType::Bishop, PieceColor::Black, 0, 5);
-
-    // Queens
-    place(PieceType::Queen, PieceColor::White, 7, 3);
-    place(PieceType::Queen, PieceColor::Black, 0, 3);
-
-    // Kings
-    place(PieceType::King, PieceColor::White, 7, 4);
-    place(PieceType::King, PieceColor::Black, 0, 4);
+    else
+    {
+        // Fallback: clear board in case loading failed
+        for (int r = 0; r < Tiles; ++r)
+            for (int c = 0; c < Tiles; ++c)
+                m_squares[r][c].reset();
+        m_currentTurn = PieceColor::White;
+        m_castlingRights = (uint8_t)(CR_WHITE_K | CR_WHITE_Q | CR_BLACK_K | CR_BLACK_Q);
+        m_enPassantTarget = std::make_pair(-1, -1);
+        m_halfmoveClock = 0;
+        m_fullmoveNumber = 1;
+        m_moveHistory.clear();
+        m_redoStack.clear();
+        m_lastMove.reset();
+        m_lastMoveError.clear();
+        m_isAwaitingPromotion = false;
+        m_pendingPromotionSquare = {-1, -1};
+    }
 }

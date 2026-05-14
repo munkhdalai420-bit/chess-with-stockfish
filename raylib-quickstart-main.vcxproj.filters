@@ -90,4 +90,21 @@
       <Filter>Game Resource Files</Filter>
     </Image>
   </ItemGroup>
+  <ItemGroup>
+    <Media Include="resources\capture.mp3">
+      <Filter>Game Resource Files</Filter>
+    </Media>
+    <Media Include="resources\castle.mp3">
+      <Filter>Game Resource Files</Filter>
+    </Media>
+    <Media Include="resources\move-check.mp3">
+      <Filter>Game Resource Files</Filter>
+    </Media>
+    <Media Include="resources\move-self.mp3">
+      <Filter>Game Resource Files</Filter>
+    </Media>
+    <Media Include="resources\promote.mp3">
+      <Filter>Game Resource Files</Filter>
+    </Media>
+  </ItemGroup>
 </Project>

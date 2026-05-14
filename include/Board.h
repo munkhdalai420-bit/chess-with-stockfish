@@ -13,6 +13,11 @@ public:
     static constexpr int Tiles = 8;
 
     enum class GameState { Active, Checkmate, Stalemate };
+    enum class MoveResult { Invalid = 0, Normal, Capture, Castle, Promotion, Check };
+
+    // Castling rights bitmask (bit0 = White kingside, bit1 = White queenside,
+    // bit2 = Black kingside, bit3 = Black queenside)
+    enum CastlingMask : uint8_t { CR_WHITE_K = 1 << 0, CR_WHITE_Q = 1 << 1, CR_BLACK_K = 1 << 2, CR_BLACK_Q = 1 << 3 };
 
     Board();
 
@@ -20,10 +25,10 @@ public:
     Piece* at(int row, int col);
 
     void initializeStandardSetup();
-    // Attempt to move a piece from start to end. Returns true if the move
-    // was legal according to piece-specific isValidMove and the board state,
-    // and updates the board state (including captures).
-    bool movePiece(int startRow, int startCol, int endRow, int endCol);
+    // Attempt to move a piece from start to end. Returns a MoveResult
+    // indicating the outcome (Invalid if move failed). Updates board state
+    // (including captures) when the move succeeds.
+    MoveResult movePiece(int startRow, int startCol, int endRow, int endCol);
 
     // Check utilities
     // Check utilities
@@ -60,6 +65,12 @@ public:
         bool rookHadMoved = false;
         int rookSrcCol = -1;
         int rookDstCol = -1;
+        // Record castling rights before and after the move to allow undo/redo
+        uint8_t castlingBefore = 0;
+        uint8_t castlingAfter = 0;
+        // Save clocks prior to the move so undo can restore them
+        int halfmoveClockBefore = 0;
+        int fullmoveNumberBefore = 1;
     };
 
     void undoMove();
@@ -71,10 +82,20 @@ public:
     // Promotion handling
     bool isAwaitingPromotion() const;
     std::pair<int,int> getPendingPromotionSquare() const;
-    void completePromotion(PieceType chosenType);
+    MoveResult completePromotion(PieceType chosenType);
+
+    // Last committed move (if any)
+    std::optional<ChessMove> getLastMove() const;
+
+    // FEN support
+    std::string getFEN() const;
+    bool loadFromFEN(const std::string& fen);
 
     // Current turn (White starts)
     PieceColor getCurrentTurn() const;
+
+    // Castling rights access
+    uint8_t getCastlingRights() const;
 
 private:
     // Own the pieces via unique_ptr, empty squares are nullptr
@@ -91,4 +112,12 @@ private:
     // Promotion awaiting state
     bool m_isAwaitingPromotion = false;
     std::pair<int,int> m_pendingPromotionSquare = {-1,-1};
+    // Last committed move (for UI highlighting)
+    std::optional<ChessMove> m_lastMove;
+    // FEN-related clocks
+    int m_halfmoveClock = 0;
+    int m_fullmoveNumber = 1;
+    // Board-level castling rights
+    uint8_t m_castlingRights = CR_WHITE_K | CR_WHITE_Q | CR_BLACK_K | CR_BLACK_Q;
+    // Internal helper (removed: clocks are now updated incrementally)
 };

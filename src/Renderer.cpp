@@ -184,6 +184,26 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     int sy = 8;
     DrawText(status.c_str(), sx, sy, STATUS_FONT_SIZE, statusColor);
 
+    // Game over overlay (checkmate or stalemate)
+    if (gs == Board::GameState::Checkmate || gs == Board::GameState::Stalemate)
+    {
+        // Full-screen translucent black
+        DrawRectangle(0, 0, m_windowSize, m_windowSize, {0,0,0,160});
+
+        // Centered message box
+        const int BOX_FONT = 36;
+        const int SUB_FONT = 20;
+        int boxW = MeasureText(status.c_str(), BOX_FONT) + 40;
+        int boxH = BOX_FONT + SUB_FONT + 36;
+        int bx = (m_windowSize - boxW) / 2;
+        int by = (m_windowSize - boxH) / 2;
+        DrawRectangle(bx, by, boxW, boxH, Fade(BLACK, 0.6f));
+        DrawText(status.c_str(), bx + 20, by + 10, BOX_FONT, WHITE);
+        const char* sub = "Press R to Restart";
+        int sw2 = MeasureText(sub, SUB_FONT);
+        DrawText(sub, (m_windowSize - sw2) / 2, by + 10 + BOX_FONT + 8, SUB_FONT, WHITE);
+    }
+
     // Promotion overlay
     if (board.isAwaitingPromotion())
     {
@@ -278,6 +298,16 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
         }
     }
         }
+    }
+
+    // Last move highlighting: draw behind labels and pieces
+    auto last = board.getLastMove();
+    if (last.has_value())
+    {
+        const auto &mv = last.value();
+        const Color hl = { 255, 255, 0, 77 }; // ~0.3 alpha
+        DrawRectangle(tileLeft(mv.c1), tileTop(mv.r1), m_tileSize, m_tileSize, hl);
+        DrawRectangle(tileLeft(mv.c2), tileTop(mv.r2), m_tileSize, m_tileSize, hl);
     }
 
     // Draw algebraic notation labels only on the leftmost file (rank numbers)

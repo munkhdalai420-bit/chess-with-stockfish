@@ -164,16 +164,27 @@ bool Piece::isValidMove(int targetRow, int targetCol, const Board& board) const
         // Castling: two-square horizontal move
         if (dr == 0 && dc == 2)
         {
-            // King must not have moved
-            if (m_hasMoved) return false;
-
+            // Check board-level castling rights rather than piece moved flags
             int rookCol = (targetCol > sc) ? 7 : 0;
             const Piece* rook = board.at(sr, rookCol);
             if (!rook) return false;
             if (rook->type() != PieceType::Rook) return false;
             if (rook->color() != m_color) return false;
-            // Rook must not have moved
-            if (rook->hasMoved()) return false;
+
+            // Determine required castling right
+            uint8_t rights = board.getCastlingRights();
+            bool allowed = false;
+            if (m_color == PieceColor::White)
+            {
+                if (targetCol > sc) allowed = (rights & Board::CR_WHITE_K);
+                else allowed = (rights & Board::CR_WHITE_Q);
+            }
+            else
+            {
+                if (targetCol > sc) allowed = (rights & Board::CR_BLACK_K);
+                else allowed = (rights & Board::CR_BLACK_Q);
+            }
+            if (!allowed) return false;
 
             int step = (targetCol > sc) ? 1 : -1;
             // Squares between king and rook must be empty
