@@ -1,6 +1,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <iostream>
 
 #include "raylib.h"
 #include "resource_dir.h" // utility to find assets folder
@@ -9,15 +10,17 @@
 #include "Renderer.h"
 
 // Window and board constants
-static constexpr int WINDOW_SIZE = 800;
-static constexpr int TILE_SIZE = 80; // 8 * 80 = 640 board, centered in 800 window
+static constexpr int WINDOW_WIDTH = 1100; // extra space for sidebar
+static constexpr int WINDOW_HEIGHT = 800;
+static constexpr int TILE_SIZE = 80; // 8 * 80 = 640 board
+static constexpr int SIDEBAR_WIDTH = 300;
 
 int main()
 {
     // Tell the window to use vsync and work on high DPI displays
     SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI);
 
-    InitWindow(WINDOW_SIZE, WINDOW_SIZE, "Chess - Rendering Foundation");
+    InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Chess - Rendering Foundation");
 
     // Set working directory to assets folder if available
     SearchAndSetResourceDir("resources");
@@ -37,7 +40,7 @@ int main()
     //board.runFENTests();
     board.initializeStandardSetup();
 
-    Renderer renderer(WINDOW_SIZE, TILE_SIZE);
+    Renderer renderer(WINDOW_WIDTH, WINDOW_HEIGHT, TILE_SIZE);
     renderer.loadTextures();
 
     std::optional<std::pair<int,int>> selected;
@@ -51,11 +54,17 @@ int main()
         {
             board.undoMove();
             selected.reset();
+            std::cout << "FEN: " << board.getFEN() << std::endl;
+            std::cout << "PGN: " << board.getFullPGNText() << std::endl;
+            std::cout << "-------------------" << std::endl;
         }
         if (IsKeyPressed(KEY_RIGHT))
         {
             board.redoMove();
             selected.reset();
+            std::cout << "FEN: " << board.getFEN() << std::endl;
+            std::cout << "PGN: " << board.getFullPGNText() << std::endl;
+            std::cout << "-------------------" << std::endl;
         }
 
         // Restart
@@ -76,8 +85,8 @@ int main()
                 const int PAD = 12;
                 const int COUNT = 4;
                 int totalW = COUNT * ICON_SIZE + (COUNT - 1) * PAD;
-                int startX = (WINDOW_SIZE - totalW) / 2;
-                int y = (WINDOW_SIZE - ICON_SIZE) / 2;
+                int startX = (WINDOW_WIDTH - totalW) / 2;
+                int y = (WINDOW_HEIGHT - ICON_SIZE) / 2;
 
                 for (int i = 0; i < COUNT; ++i)
                 {
@@ -97,6 +106,17 @@ int main()
                         if (pres == Board::MoveResult::Promotion)
                         {
                             PlaySound(sndPromote);
+                            // Record SAN for the completed promotion move and print history
+                            auto last = board.getLastMove();
+                            if (last.has_value())
+                            {
+                                std::string san = board.moveToSAN(last.value());
+                                board.setLastMoveSAN(san);
+                                std::cout << "Move played: " << san << std::endl;
+                            }
+                            std::cout << "FEN: " << board.getFEN() << std::endl;
+                            std::cout << "PGN: " << board.getFullPGNText() << std::endl;
+                            std::cout << "-------------------" << std::endl;
                         }
                         selected.reset();
                         break;
@@ -107,9 +127,10 @@ int main()
         else if (board.getGameState() == Board::GameState::Active && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
         {
             Vector2 mp = GetMousePosition();
-            int boardPixelSize = TILE_SIZE * Board::Tiles;
-            int originX = (WINDOW_SIZE - boardPixelSize) / 2;
-            int originY = (WINDOW_SIZE - boardPixelSize) / 2;
+                int boardPixelSize = TILE_SIZE * Board::Tiles;
+                int availableWidth = WINDOW_WIDTH - SIDEBAR_WIDTH;
+                int originX = (availableWidth - boardPixelSize) / 2;
+                int originY = (WINDOW_HEIGHT - boardPixelSize) / 2;
 
             float localX = mp.x - originX;
             float localY = mp.y - originY;
@@ -162,13 +183,20 @@ int main()
                             {
                                 PlaySound(sndMoveSelf);
                             }
-				// Print move SAN
-				auto last = board.getLastMove();
-				if (last.has_value())
-				{
-					std::string san = board.moveToSAN(last.value());
-					std::printf("Move played: %s\n", san.c_str());
-				}
+                            // Record SAN for this move (except promotions; those are recorded on completion)
+                            if (res != Board::MoveResult::Promotion)
+                            {
+                                auto last = board.getLastMove();
+                                if (last.has_value())
+                                {
+                                    std::string san = board.moveToSAN(last.value());
+                                    board.setLastMoveSAN(san);
+                                    //std::cout << "Move played: " << san << std::endl;
+                                }
+                                std::cout << "FEN: " << board.getFEN() << std::endl;
+                                std::cout << "PGN: " << board.getFullPGNText() << std::endl;
+                                std::cout << "-------------------" << std::endl;
+                            }
                         }
                         else
                         {
@@ -185,7 +213,7 @@ int main()
                                 selected.reset();
                         }
                     }
-					std::printf("%s\n", board.getFEN().c_str());
+					//std::printf("%s\n", board.getFEN().c_str());
                 }
             }
             else

@@ -71,6 +71,8 @@ public:
         // Save clocks prior to the move so undo can restore them
         int halfmoveClockBefore = 0;
         int fullmoveNumberBefore = 1;
+        // SAN string for this move (filled externally after move is executed)
+        std::string san;
     };
 
     void undoMove();
@@ -91,9 +93,10 @@ public:
     std::string getFEN() const;
     bool loadFromFEN(const std::string& fen);
 
-    // SAN generation
+    // PGN / SAN utilities
     std::string moveToSAN(const ChessMove& move);
-
+    void setLastMoveSAN(const std::string& san);
+    std::string getFullPGNText() const;
     // Self-test utilities
     //void runFENTests();
 

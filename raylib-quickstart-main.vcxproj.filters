@@ -107,4 +107,9 @@
       <Filter>Game Resource Files</Filter>
     </Media>
   </ItemGroup>
+  <ItemGroup>
+    <Font Include="resources\futura_font.ttf">
+      <Filter>Game Resource Files</Filter>
+    </Font>
+  </ItemGroup>
 </Project>

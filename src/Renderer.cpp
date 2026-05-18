@@ -4,28 +4,66 @@
 #include <cstdio>
 #include <iostream>
 #include <vector>
+#include <sstream>
 
-Renderer::Renderer(int windowSize, int tileSize)
-    : m_windowSize(windowSize), m_tileSize(tileSize)
+static std::vector<std::string> wrapText(const std::string &text, int maxWidth, int fontSize)
+{
+    std::vector<std::string> lines;
+    std::istringstream iss(text);
+    std::string word;
+    std::string cur;
+    while (iss >> word)
+    {
+        std::string tryLine = cur.empty() ? word : (cur + " " + word);
+        int w = MeasureText(tryLine.c_str(), fontSize);
+        if (w <= maxWidth)
+        {
+            cur = tryLine;
+        }
+        else
+        {
+            if (!cur.empty()) lines.push_back(cur);
+            // if single word is too long, force it on a line
+            if (MeasureText(word.c_str(), fontSize) > maxWidth)
+            {
+                // split the word (naive): push as is
+                lines.push_back(word);
+                cur.clear();
+            }
+            else
+            {
+                cur = word;
+            }
+        }
+    }
+    if (!cur.empty()) lines.push_back(cur);
+    return lines;
+}
+
+Renderer::Renderer(int windowWidth, int windowHeight, int tileSize)
+    : m_windowWidth(windowWidth), m_windowHeight(windowHeight), m_tileSize(tileSize)
 {
     m_boardPixelSize = m_tileSize * Board::Tiles;
-    m_boardOriginX = (m_windowSize - m_boardPixelSize) / 2;
-    m_boardOriginY = (m_windowSize - m_boardPixelSize) / 2;
+    // Position board centered in the area left of the sidebar
+    int availableWidth = m_windowWidth - m_sidebarWidth;
+    if (availableWidth < m_boardPixelSize) availableWidth = m_boardPixelSize; // avoid negative
+    m_boardOriginX = (availableWidth - m_boardPixelSize) / 2;
+    m_boardOriginY = (m_windowHeight - m_boardPixelSize) / 2;
 }
 
 int Renderer::tileLeft(int col) const
 {
-    return m_boardOriginX + col * m_tileSize;
+    return m_boardOriginX + col * m_tileSize; // no-op adjustment
 }
 
 int Renderer::tileTop(int row) const
 {
-    return m_boardOriginY + row * m_tileSize;
+    return m_boardOriginY + row * m_tileSize; // no-op adjustment
 }
 
 Rectangle Renderer::tileRect(int row, int col) const
 {
-    return Rectangle{ (float)tileLeft(col), (float)tileTop(row), (float)m_tileSize, (float)m_tileSize };
+    return Rectangle{ (float)tileLeft(col), (float)tileTop(row), (float)m_tileSize, (float)m_tileSize }; // no-op adjustment
 }
 
 Renderer::~Renderer()
@@ -150,6 +188,51 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     }
 
     drawPieces(board);
+    // Draw move history sidebar on the right
+    const int panelX = m_windowWidth - m_sidebarWidth;
+    const int panelY = 0;
+    const int panelW = m_sidebarWidth;
+    const int panelH = m_windowHeight;
+
+    // Panel background
+    const Color panelBg = { 30, 30, 30, 220 };
+    DrawRectangle(panelX, panelY, panelW, panelH, panelBg);
+
+    // Title
+    const int titleFont = 24;
+    const int bodyFont = 20; // monospaced not available, use default
+    const int padding = 12;
+    const Color textCol = { 220, 220, 220, 255 };
+    DrawText("Move History", panelX + padding, panelY + padding, titleFont, textCol);
+
+    // PGN text
+    std::string pgn = board.getFullPGNText();
+    int innerW = panelW - padding * 2;
+    std::vector<std::string> lines = wrapText(pgn, innerW, bodyFont);
+
+    int titleH = MeasureText("Move History", titleFont);
+    int availableH = panelH - (padding * 3 + titleH);
+    int lineH = bodyFont + 6;
+    int totalH = (int)lines.size() * lineH;
+
+    int startY;
+    if (totalH > availableH)
+    {
+        // pin to bottom
+        startY = panelY + padding + titleH + padding + (availableH - totalH);
+    }
+    else
+    {
+        startY = panelY + padding + titleH + padding;
+    }
+
+    // Draw lines
+    for (size_t i = 0; i < lines.size(); ++i)
+    {
+        int y = startY + (int)i * lineH;
+        if (y + lineH > panelY + panelH - padding) break; // clip
+        DrawText(lines[i].c_str(), panelX + padding, y, bodyFont, textCol);
+    }
     // Draw status text (turn, check, checkmate)
     // Keep this after pieces so it appears on top
     // Implemented below as inline here to keep file-local
@@ -180,7 +263,7 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     }
 
     int sw = MeasureText(status.c_str(), STATUS_FONT_SIZE);
-    int sx = (m_windowSize - sw) / 2;
+    int sx = (panelW - sw) / 2;
     int sy = 8;
     DrawText(status.c_str(), sx, sy, STATUS_FONT_SIZE, statusColor);
 
@@ -188,20 +271,20 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     if (gs == Board::GameState::Checkmate || gs == Board::GameState::Stalemate)
     {
         // Full-screen translucent black
-        DrawRectangle(0, 0, m_windowSize, m_windowSize, {0,0,0,160});
+        DrawRectangle(0, 0, m_windowWidth, m_windowHeight, {0,0,0,160});
 
         // Centered message box
         const int BOX_FONT = 36;
         const int SUB_FONT = 20;
         int boxW = MeasureText(status.c_str(), BOX_FONT) + 40;
         int boxH = BOX_FONT + SUB_FONT + 36;
-        int bx = (m_windowSize - boxW) / 2;
-        int by = (m_windowSize - boxH) / 2;
+        int bx = (m_windowWidth - boxW) / 2;
+        int by = (m_windowHeight - boxH) / 2;
         DrawRectangle(bx, by, boxW, boxH, Fade(BLACK, 0.6f));
         DrawText(status.c_str(), bx + 20, by + 10, BOX_FONT, WHITE);
         const char* sub = "Press R to Restart";
         int sw2 = MeasureText(sub, SUB_FONT);
-        DrawText(sub, (m_windowSize - sw2) / 2, by + 10 + BOX_FONT + 8, SUB_FONT, WHITE);
+        DrawText(sub, (m_windowWidth - sw2) / 2, by + 10 + BOX_FONT + 8, SUB_FONT, WHITE);
     }
 
     // Promotion overlay
@@ -216,8 +299,8 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
         const int PAD = 12;
         const int COUNT = 4;
         int totalW = COUNT * ICON_SIZE + (COUNT - 1) * PAD;
-        int startX = (m_windowSize - totalW) / 2;
-        int y = (m_windowSize - ICON_SIZE) / 2;
+        int startX = (m_windowWidth - totalW) / 2;
+        int y = (m_windowHeight - ICON_SIZE) / 2;
 
         // Background: solid, slightly translucent rectangle so the board doesn't distract
         const Color promoBg = { 0, 0, 0, 220 };
@@ -250,8 +333,8 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
 void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& selected) const
 {
     // Colors for the board
-    const Color lightColor = {240, 217, 181, 255};
-    const Color darkColor  = {181, 136,  99, 255};
+    const Color lightColor = { 222, 227, 230, 255};
+    const Color darkColor  = { 140, 162,  173, 255};
     const Color highlightColor = {0, 255, 0, 100};
 
     // Draw tiles

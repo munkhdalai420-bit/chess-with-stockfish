@@ -10,7 +10,7 @@
 class Renderer
 {
 public:
-    Renderer(int windowSize, int tileSize);
+    Renderer(int windowWidth, int windowHeight, int tileSize);
     ~Renderer();
 
     // Loads textures for all piece types/colors found in the assets folder.
@@ -21,11 +21,13 @@ public:
     void render(Board& board, const std::optional<std::pair<int,int>>& selected) const;
 
 private:
-    int m_windowSize;
+    int m_windowWidth;
+    int m_windowHeight;
     int m_tileSize;
     int m_boardPixelSize;
     int m_boardOriginX;
     int m_boardOriginY;
+    int m_sidebarWidth = 300;
 
     std::unordered_map<std::string, Texture2D> m_textures; // key like "k_l" => texture
 

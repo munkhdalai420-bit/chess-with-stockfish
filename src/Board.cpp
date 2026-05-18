@@ -19,6 +19,40 @@ Board::Board()
     m_castlingRights = (uint8_t)(Board::CR_WHITE_K | Board::CR_WHITE_Q | Board::CR_BLACK_K | Board::CR_BLACK_Q);
 }
 
+void Board::setLastMoveSAN(const std::string& san)
+{
+    if (!m_moveHistory.empty())
+    {
+        m_moveHistory.back().san = san;
+        m_lastMove = m_moveHistory.back();
+    }
+}
+
+std::string Board::getFullPGNText() const
+{
+    std::ostringstream out;
+    int moveNumber = 1;
+    for (size_t i = 0; i < m_moveHistory.size(); ++i)
+    {
+        const ChessMove &mv = m_moveHistory[i];
+        if (mv.movedColor == PieceColor::White)
+        {
+            if (i != 0) out << ' ';
+            out << moveNumber << ". ";
+            if (!mv.san.empty()) out << mv.san;
+            else out << "?";
+        }
+        else
+        {
+            out << ' ';
+            if (!mv.san.empty()) out << mv.san;
+            else out << "?";
+            moveNumber++;
+        }
+    }
+    return out.str();
+}
+
 static char pieceLetter(PieceType t)
 {
     switch (t)
