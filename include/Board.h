@@ -97,6 +97,12 @@ public:
     std::string moveToSAN(const ChessMove& move);
     void setLastMoveSAN(const std::string& san);
     std::string getFullPGNText() const;
+
+    // Parse Stockfish's Long Algebraic Notation (LAN) string into a ChessMove object
+    // Input format: 4-5 characters (e.g., 'e2e4' or 'e7e8q')
+    // For promotion moves (5 chars), the 5th character is not processed here
+    ChessMove parseEngineMove(const std::string& moveStr);
+
     // Self-test utilities
     //void runFENTests();
 

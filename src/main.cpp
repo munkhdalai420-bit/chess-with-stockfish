@@ -8,6 +8,7 @@
 
 #include "Board.h"
 #include "Renderer.h"
+#include "EngineManager.h"
 
 // Window and board constants
 static constexpr int WINDOW_WIDTH = 1100; // extra space for sidebar
@@ -43,9 +44,14 @@ int main()
     Renderer renderer(WINDOW_WIDTH, WINDOW_HEIGHT, TILE_SIZE);
     renderer.loadTextures();
 
+    // Initialize EngineManager and launch Stockfish
+    EngineManager engine;
+    engine.launch("D:/Downloads/raylib-quickstart-main2026/raylib-quickstart-main/engines/stockfish.exe");
+
     std::optional<std::pair<int,int>> selected;
     std::string moveMessage;
     float messageTimer = 0.0f;
+    bool aiIsThinking = false;
 
     while (!WindowShouldClose())
     {
@@ -135,90 +141,182 @@ int main()
             float localX = mp.x - originX;
             float localY = mp.y - originY;
 
-            if (localX >= 0 && localY >= 0 && localX < boardPixelSize && localY < boardPixelSize)
-            {
-                int col = (int)(localX / TILE_SIZE);
-                int row = (int)(localY / TILE_SIZE);
+			if (localX >= 0 && localY >= 0 && localX < boardPixelSize && localY < boardPixelSize)
+			{
+				// Only allow board interaction if it's White's turn
+				if (board.getCurrentTurn() == PieceColor::White)
+				{
+					int col = (int)(localX / TILE_SIZE);
+					int row = (int)(localY / TILE_SIZE);
 
-                if (!selected.has_value())
-                {
-                    // First click: select piece if present
-                    if (board.at(row, col) != nullptr)
-                        selected = std::make_pair(row, col);
-                }
-                else
-                {
-                    auto [sr, sc] = selected.value();
-                    // If clicking the same square, deselect
-                    if (sr == row && sc == col)
-                    {
-                        selected.reset();
-                    }
-                    else
-                    {
-                        // Attempt move from selected -> clicked
-                        Board::MoveResult res = board.movePiece(sr, sc, row, col);
-                        if (res != Board::MoveResult::Invalid)
-                        {
-                            selected.reset();
+					if (!selected.has_value())
+					{
+						// First click: select piece if present
+						if (board.at(row, col) != nullptr)
+							selected = std::make_pair(row, col);
+					}
+					else
+					{
+						auto [sr, sc] = selected.value();
+						// If clicking the same square, deselect
+						if (sr == row && sc == col)
+						{
+							selected.reset();
+						}
+						else
+						{
+							// Attempt move from selected -> clicked
+							Board::MoveResult res = board.movePiece(sr, sc, row, col);
+							if (res != Board::MoveResult::Invalid)
+							{
+								selected.reset();
 
-                            // Play sounds for non-promotion moves immediately
-                            if (res == Board::MoveResult::Check)
-                            {
-                                PlaySound(sndMoveCheck);
-                            }
-                            else if (res == Board::MoveResult::Castle)
-                            {
-                                PlaySound(sndCastle);
-                            }
-                            else if (res == Board::MoveResult::Capture)
-                            {
-                                PlaySound(sndCapture);
-                            }
-                            else if (res == Board::MoveResult::Promotion)
-                            {
-                                // Promotion pending; wait for user to confirm choice and play promote then
-                            }
-                            else
-                            {
-                                PlaySound(sndMoveSelf);
-                            }
-                            // Record SAN for this move (except promotions; those are recorded on completion)
-                            if (res != Board::MoveResult::Promotion)
-                            {
-                                auto last = board.getLastMove();
-                                if (last.has_value())
-                                {
-                                    std::string san = board.moveToSAN(last.value());
-                                    board.setLastMoveSAN(san);
-                                    //std::cout << "Move played: " << san << std::endl;
-                                }
-                                std::cout << "FEN: " << board.getFEN() << std::endl;
-                                std::cout << "PGN: " << board.getFullPGNText() << std::endl;
-                                std::cout << "-------------------" << std::endl;
-                            }
-                        }
-                        else
-                        {
-                            // Show move error temporarily
-                            moveMessage = board.getLastMoveError();
-                            if (moveMessage.empty()) moveMessage = "Illegal move";
-                            messageTimer = 2.5f;
-                            std::printf("Move failed: %s\n", moveMessage.c_str());
+								// Play sounds for non-promotion moves immediately
+								if (res == Board::MoveResult::Check)
+								{
+									PlaySound(sndMoveCheck);
+								}
+								else if (res == Board::MoveResult::Castle)
+								{
+									PlaySound(sndCastle);
+								}
+								else if (res == Board::MoveResult::Capture)
+								{
+									PlaySound(sndCapture);
+								}
+								else if (res == Board::MoveResult::Promotion)
+								{
+									// Promotion pending; wait for user to confirm choice and play promote then
+								}
+								else
+								{
+									PlaySound(sndMoveSelf);
+								}
+								// Record SAN for this move (except promotions; those are recorded on completion)
+								if (res != Board::MoveResult::Promotion)
+								{
+									auto last = board.getLastMove();
+									if (last.has_value())
+									{
+										std::string san = board.moveToSAN(last.value());
+										board.setLastMoveSAN(san);
+										//std::cout << "Move played: " << san << std::endl;
+									}
+									std::cout << "FEN: " << board.getFEN() << std::endl;
+									std::cout << "PGN: " << board.getFullPGNText() << std::endl;
+									std::cout << "-------------------" << std::endl;
+								}
+							}
+							else
+							{
+								// Show move error temporarily
+								moveMessage = board.getLastMoveError();
+								if (moveMessage.empty()) moveMessage = "Illegal move";
+								messageTimer = 2.5f;
+								std::printf("Move failed: %s\n", moveMessage.c_str());
 
-                            // If move failed but clicked another piece, change selection
-                            if (board.at(row, col) != nullptr)
-                                selected = std::make_pair(row, col);
-                            else
-                                selected.reset();
-                        }
-                    }
-					//std::printf("%s\n", board.getFEN().c_str());
-                }
-            }
+								// If move failed but clicked another piece, change selection
+								if (board.at(row, col) != nullptr)
+									selected = std::make_pair(row, col);
+								else
+									selected.reset();
+							}
+						}
+					}
+				}
+			}
             else
             {
                 selected.reset();
+            }
+        }
+
+        // Phase A (Trigger): Check if it's Black's turn and AI is not already thinking
+        if (board.getGameState() == Board::GameState::Active && 
+            board.getCurrentTurn() == PieceColor::Black && 
+            !aiIsThinking)
+        {
+            aiIsThinking = true;
+            std::string currentFen = board.getFEN();
+            engine.startSearch(currentFen, 1000);
+        }
+
+        // Phase B (Polling): Check if the AI has finished thinking
+        if (aiIsThinking)
+        {
+            std::string bestMove;
+            if (engine.checkBestMove(bestMove))
+            {
+                // AI has produced a move
+                Board::ChessMove engineMove = board.parseEngineMove(bestMove);
+                Board::MoveResult res = board.movePiece(engineMove.r1, engineMove.c1, engineMove.r2, engineMove.c2);
+
+                if (res != Board::MoveResult::Invalid)
+                {
+                    // Move was successful
+                    if (res == Board::MoveResult::Check)
+                    {
+                        PlaySound(sndMoveCheck);
+                    }
+                    else if (res == Board::MoveResult::Castle)
+                    {
+                        PlaySound(sndCastle);
+                    }
+                    else if (res == Board::MoveResult::Capture)
+                    {
+                        PlaySound(sndCapture);
+                    }
+                    else if (res == Board::MoveResult::Promotion)
+                    {
+                        // Handle promotion: check if the move string is 5 chars (includes promotion piece)
+                        if (bestMove.length() == 5)
+                        {
+                            char promotionChar = bestMove[4];
+                            PieceType chosenType = PieceType::Queen;
+                            switch (promotionChar)
+                            {
+                            case 'q': chosenType = PieceType::Queen; break;
+                            case 'r': chosenType = PieceType::Rook; break;
+                            case 'b': chosenType = PieceType::Bishop; break;
+                            case 'n': chosenType = PieceType::Knight; break;
+                            }
+                            board.completePromotion(chosenType);
+                            PlaySound(sndPromote);
+                        }
+                    }
+                    else
+                    {
+                        PlaySound(sndMoveSelf);
+                    }
+
+                    // Record SAN for this move
+                    if (res != Board::MoveResult::Promotion)
+                    {
+                        auto last = board.getLastMove();
+                        if (last.has_value())
+                        {
+                            std::string san = board.moveToSAN(last.value());
+                            board.setLastMoveSAN(san);
+                            std::cout << "AI Move: " << san << std::endl;
+                        }
+                    }
+                    else
+                    {
+                        auto last = board.getLastMove();
+                        if (last.has_value())
+                        {
+                            std::string san = board.moveToSAN(last.value());
+                            board.setLastMoveSAN(san);
+                            std::cout << "AI Move (Promotion): " << san << std::endl;
+                        }
+                    }
+
+                    std::cout << "FEN: " << board.getFEN() << std::endl;
+                    std::cout << "PGN: " << board.getFullPGNText() << std::endl;
+                    std::cout << "-------------------" << std::endl;
+                }
+
+                aiIsThinking = false;
             }
         }
 
@@ -244,6 +342,9 @@ int main()
     UnloadSound(sndMoveSelf);
     UnloadSound(sndPromote);
     CloseAudioDevice();
+
+    // Shutdown the engine and clean up resources
+    engine.shutdown();
 
     CloseWindow();
     return 0;

@@ -1172,3 +1172,59 @@ void Board::initializeStandardSetup()
         m_pendingPromotionSquare = {-1, -1};
     }
 }
+
+Board::ChessMove Board::parseEngineMove(const std::string& moveStr)
+{
+    ChessMove move = {};
+
+    // Validate input length: must be 4 or 5 characters
+    // 4 chars: standard move (e.g., "e2e4")
+    // 5 chars: promotion move (e.g., "e7e8q") - 5th character ignored here
+    if (moveStr.length() < 4 || moveStr.length() > 5)
+    {
+        return move; // Return empty/default move on invalid input
+    }
+
+    // Parse source square (first 2 characters)
+    char srcFile = moveStr[0];
+    char srcRank = moveStr[1];
+
+    // Validate file and rank are within valid range
+    if (srcFile < 'a' || srcFile > 'h' || srcRank < '1' || srcRank > '8')
+    {
+        return move;
+    }
+
+    // Convert file ('a'-'h') to column (0-7)
+    int c1 = srcFile - 'a';
+    // Convert rank ('1'-'8') to row (7-0)
+    // Since rank '1' is at the bottom and our grid has row 0 at top (rank 8),
+    // we use: row = 8 - (rank - '0') = 8 - rank + '0' = '8' - rank
+    int r1 = 8 - (srcRank - '0');
+
+    // Parse destination square (characters at index 2 and 3)
+    char dstFile = moveStr[2];
+    char dstRank = moveStr[3];
+
+    // Validate destination file and rank
+    if (dstFile < 'a' || dstFile > 'h' || dstRank < '1' || dstRank > '8')
+    {
+        return move;
+    }
+
+    // Convert destination file and rank using same logic
+    int c2 = dstFile - 'a';
+    int r2 = 8 - (dstRank - '0');
+
+    // Populate the move object with coordinates
+    move.r1 = r1;
+    move.c1 = c1;
+    move.r2 = r2;
+    move.c2 = c2;
+
+    // Note: The 5th character (if present) indicating promotion choice
+    // (e.g., 'q', 'r', 'b', 'n') is not processed here.
+    // The caller should handle promotion choice separately via completePromotion().
+
+    return move;
+}
