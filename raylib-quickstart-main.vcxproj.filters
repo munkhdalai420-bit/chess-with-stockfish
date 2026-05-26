@@ -30,6 +30,9 @@
     <ClInclude Include="include\EngineManager.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="include\GameController.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="src\icon.ico">
@@ -55,6 +58,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\EngineManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\GameController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

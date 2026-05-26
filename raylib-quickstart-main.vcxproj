@@ -303,6 +303,7 @@
   <ItemGroup>
     <ClInclude Include="include\Board.h" />
     <ClInclude Include="include\EngineManager.h" />
+    <ClInclude Include="include\GameController.h" />
     <ClInclude Include="include\Piece.h" />
     <ClInclude Include="include\Renderer.h" />
     <ClInclude Include="include\resource_dir.h" />
@@ -321,6 +322,7 @@
   <ItemGroup>
     <ClCompile Include="src\Board.cpp" />
     <ClCompile Include="src\EngineManager.cpp" />
+    <ClCompile Include="src\GameController.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\Piece.cpp" />
     <ClCompile Include="src\Renderer.cpp" />

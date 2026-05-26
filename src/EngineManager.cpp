@@ -11,6 +11,23 @@ EngineManager::~EngineManager()
     shutdown();
 }
 
+float EngineManager::getEvaluation() const
+{
+    return m_currentEvaluation.load();
+}
+
+void EngineManager::setDifficulty(int elo)
+{
+    if (!m_isRunning) return;
+
+    // Enable limited strength and set Elo
+    sendCommand("setoption name UCI_LimitStrength value true");
+    sendCommand(std::string("setoption name UCI_Elo value ") + std::to_string(elo));
+    // Ensure engine applied options
+    sendCommand("isready");
+    waitForResponse("readyok", 2000);
+}
+
 bool EngineManager::launch(const std::string& path)
 {
     if (m_isRunning)
@@ -18,7 +35,7 @@ bool EngineManager::launch(const std::string& path)
         return false; // Already running
     }
 
-    std::string enginePath = path.empty() ? "./engines/stockfish.exe" : path;
+    std::string enginePath = path.empty() ? "D:/Downloads/raylib-quickstart-main2026/raylib-quickstart-main/engines/stockfish.exe" : path;
 
     // Create anonymous pipes for stdin and stdout
     SECURITY_ATTRIBUTES sa;
@@ -163,7 +180,24 @@ bool EngineManager::startSearch(const std::string& fen, int timeMs)
 
     // Build the command sequence
     std::string posCmd = "position fen " + fen;
-    std::string goCmd = "go wtime " + std::to_string(timeMs) + " btime " + std::to_string(timeMs);
+    // Record which side is to move in this position so we can normalize evaluation
+    // FEN format: <piece-placements> <active-color> ...
+    {
+        std::istringstream iss(fen);
+        std::string part;
+        // skip piece placement
+        if (iss >> part)
+        {
+            if (iss >> part)
+            {
+                bool whiteToMove = (!part.empty() && part[0] == 'w');
+                m_positionSideIsWhite.store(whiteToMove);
+            }
+        }
+    }
+    // Use movetime for a fixed thinking time and avoid using wtime/btime which are
+    // intended to communicate remaining clock times.
+    std::string goCmd = "go movetime " + std::to_string(timeMs);
 
     if (!sendCommand(posCmd))
     {
@@ -185,10 +219,34 @@ bool EngineManager::startSearch(const std::string& fen, int timeMs)
     return true;
 }
 
+void EngineManager::stopSearch()
+{
+    if (!m_isRunning)
+    {
+        return;
+    }
+
+    // Mark that we're aborting this search so we can ignore its bestmove response
+    m_searchAborted = true;
+
+    // Send "stop" command to force Stockfish to halt and return current best move
+    sendCommand("stop");
+}
+
 bool EngineManager::checkBestMove(std::string& outMove)
 {
     if (!m_bestMoveReady)
     {
+        return false;
+    }
+
+    // If the search was aborted, ignore this bestmove
+    if (m_searchAborted.load())
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_bestMove.clear();
+        m_bestMoveReady = false;
+        m_searchAborted = false;
         return false;
     }
 
@@ -218,35 +276,46 @@ void EngineManager::shutdown()
         return;
     }
 
+    // Signal shutdown to the worker thread so it can stop reading.
     m_shouldShutdown = true;
-    m_isRunning = false;
 
-    // Close input pipe to signal EOF to engine
+    // Try a graceful shutdown: send "quit" to the engine so it can exit cleanly.
     if (m_hStdinWrite)
     {
+        // sendCommand requires m_isRunning to be true; keep it true until we've asked the engine to quit
+        if (!sendCommand("quit"))
+        {
+            // If sending failed, still attempt to close the pipe to signal EOF
+        }
+
+        // Close our write handle to signal EOF to the child process
         CloseHandle(m_hStdinWrite);
         m_hStdinWrite = nullptr;
     }
 
-    // Wait for worker thread with timeout
-    if (m_workerThread.joinable())
-    {
-        if (m_workerThread.join(), true) // Always completes, but with potential timeout handling
-        {
-            // Thread joined successfully
-        }
-    }
-
-    // Terminate process if still running
+    // Wait for the engine process to exit gracefully for up to 2 seconds
+    const DWORD WAIT_TIMEOUT_MS = 2000;
     if (m_hProcess)
     {
-        TerminateProcess(m_hProcess, 0);
-        WaitForSingleObject(m_hProcess, 1000);
+        DWORD waitRes = WaitForSingleObject(m_hProcess, WAIT_TIMEOUT_MS);
+        if (waitRes == WAIT_TIMEOUT)
+        {
+            // Still running after timeout - force termination
+            TerminateProcess(m_hProcess, 0);
+            WaitForSingleObject(m_hProcess, 1000);
+        }
+
         CloseHandle(m_hProcess);
         m_hProcess = nullptr;
     }
 
-    // Close remaining handles
+    // Ensure the background worker thread exits and join it
+    if (m_workerThread.joinable())
+    {
+        m_workerThread.join();
+    }
+
+    // Close remaining handles used for communication
     if (m_hStdinRead)
     {
         CloseHandle(m_hStdinRead);
@@ -257,6 +326,9 @@ void EngineManager::shutdown()
         CloseHandle(m_hStdoutRead);
         m_hStdoutRead = nullptr;
     }
+
+    // Mark not running
+    m_isRunning = false;
 
     std::cout << "Stockfish engine shut down" << std::endl;
 }
@@ -303,6 +375,45 @@ void EngineManager::backgroundWorker()
 
             // Debug output
             std::cout << "[Engine] " << line << std::endl;
+            // Parse live evaluation info lines (e.g., "info ... score cp <v>" or "info ... score mate <v>")
+            if (line.rfind("info", 0) == 0)
+            {
+                std::istringstream iss(line);
+                std::string token;
+                while (iss >> token)
+                {
+                    if (token == "score")
+                    {
+                        std::string scoreType;
+                        if (!(iss >> scoreType)) break;
+
+                        if (scoreType == "cp")
+                        {
+                            int cpValue = 0;
+                            if (iss >> cpValue)
+                            {
+                                float eval = (float)cpValue / 100.0f;
+                                // Normalize so positive = White advantage
+                                if (!m_positionSideIsWhite.load()) eval = -eval;
+                                m_currentEvaluation.store(eval);
+                                m_isMateDetected.store(false);
+                            }
+                        }
+                        else if (scoreType == "mate")
+                        {
+                            int mateVal = 0;
+                            if (iss >> mateVal)
+                            {
+                                // Normalize sign so positive = White is winning (mate for White)
+                                if (!m_positionSideIsWhite.load()) mateVal = -mateVal;
+                                m_mateInMoves.store(mateVal);
+                                m_isMateDetected.store(true);
+                            }
+                        }
+                    }
+                }
+            }
+            //std::printf("%f\n", m_currentEvaluation.load());
 
             // Check for bestmove
             if (line.substr(0, 8) == "bestmove")

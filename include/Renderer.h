@@ -10,15 +10,22 @@
 class Renderer
 {
 public:
+    enum class BoardTheme { Classic, Wood, Ocean, Grass };
+
     Renderer(int windowWidth, int windowHeight, int tileSize);
     ~Renderer();
+
+    // Set visual theme for the board tiles
+    void setTheme(BoardTheme theme);
 
     // Loads textures for all piece types/colors found in the assets folder.
     // If SVG files are present instead of PNGs, replace the extension in the implementation.
     bool loadTextures();
 
     // Render the board and pieces. 'selected' is an optional board coordinate {row, col}
-    void render(Board& board, const std::optional<std::pair<int,int>>& selected) const;
+    // 'evaluation' is a signed value (positive = White advantage) corresponding
+    // to the currently displayed history index.
+    void render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation) const;
 
 private:
     int m_windowWidth;
@@ -31,6 +38,7 @@ private:
 
     std::unordered_map<std::string, Texture2D> m_textures; // key like "k_l" => texture
     Font m_mainFont; // custom font used for UI text (loaded at runtime)
+    BoardTheme m_theme = BoardTheme::Ocean;
 
     std::string textureFilenameForKey(const std::string& key) const;
     const Texture2D* textureForKey(const std::string& key) const;

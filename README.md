@@ -100,6 +100,10 @@ Features (detailed)
 
 •	Clean engine shutdown on exit.
 
+
+
+
+
 Where to improve — prioritized suggestions
 
 1\.	Correctness / Robustness (high priority)
@@ -195,6 +199,66 @@ If you want, I can:
 •	Move AI orchestration into a GameController class and clean main.cpp.
 
 Which change should I implement first?
+
+
+
+
+
+•	Allow configuration (player side, engine path, time per move) via a settings file or UI.
+
+
+
+•	Animate piece movement rather than instant teleport to improve visual feedback.
+
+
+
+\- show move history not as the whole PGN, but just printed out. But rather in list, on different lines, (which you can press to go back to that state?)
+
+
+
+\- choice to play as black
+
+
+
+\- choice to choose between different colored boards
+
+
+
+\- button Undo, End match which just resets, Redo
+
+
+
+\- Confirmation when ending match
+
+
+
+\- dropdown to choose, between stockfish ai's with different dephts, choose between elos 500, 1000, 1500, 2000
+
+
+
+\- and does stockfish also handle chess advantages, if possible render a vertical bar, which is black on top, and white on bottom, and shows which side has more advantage depending on stockfish's evaluation
+
+
+
+const Color lightColor = { 222, 227, 230, 255};
+
+const Color darkColor  = { 140, 162,  173, 255};
+
+//const Color lightColor = { 240, 217, 181, 255 };
+
+//const Color darkColor = { 181, 136,  99, 255 };
+
+
+
+//const Color lightColor = { 255, 255, 221, 255 };
+
+//const Color darkColor = { 134, 166,  102, 255 };
+
+
+
+//const Color lightColor = { 240, 240, 240, 255 };
+
+//const Color darkColor = { 20, 20, 20, 255 };
 
 
 

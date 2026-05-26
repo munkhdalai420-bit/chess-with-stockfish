@@ -57,6 +57,12 @@ Renderer::Renderer(int windowWidth, int windowHeight, int tileSize)
         std::printf("Warning: failed to load 'resources/google_font.ttf', falling back to default font\n");
         m_mainFont = GetFontDefault();
     }
+
+}
+
+void Renderer::setTheme(BoardTheme theme)
+{
+    m_theme = theme;
 }
 
 int Renderer::tileLeft(int col) const
@@ -155,7 +161,7 @@ bool Renderer::loadTextures()
     return true;
 }
 
-void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& selected) const
+void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation) const
 {
     drawBoard(board, selected);
 
@@ -189,14 +195,14 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
                     if (dest && dest->color() != sel->color())
                     {
                         // Capture hint: draw a larger ring
-                        float radius = (float)m_tileSize * 0.35f;
-                        DrawCircleLines(cx, cy, (int)radius, hintRing);
+                        int radius = (int)m_tileSize * 0.35f;
+                        DrawCircleLines(cx, cy, radius, hintRing);
                     }
                     else
                     {
                         // Normal move hint: small filled circle
                         float radius = (float)m_tileSize * 0.12f;
-                        DrawCircle(cx, cy, radius, hintFill);
+                        DrawCircle(cx, cy, (int)radius, hintFill);
                     }
                 }
             }
@@ -349,9 +355,45 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
 void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& selected) const
 {
     // Colors for the board
-    const Color lightColor = { 222, 227, 230, 255};
-    const Color darkColor  = { 140, 162,  173, 255};
+    // Select colors based on the currently selected theme
+    Color lightColor;
+    Color darkColor;
+    switch (m_theme)
+    {
+        case BoardTheme::Ocean:
+        {
+            const Color l = { 222, 227, 230, 255 };
+            const Color d = { 140, 162, 173, 255 };
+            lightColor = l; darkColor = d;
+            break;
+        }
+        case BoardTheme::Wood:
+        {
+            const Color l = { 240, 217, 181, 255 };
+            const Color d = { 181, 136,  99, 255 };
+            lightColor = l; darkColor = d;
+            break;
+        }
+        case BoardTheme::Grass:
+        {
+            const Color l = { 255, 255, 221, 255 };
+            const Color d = { 134, 166,  102, 255 };
+            lightColor = l; darkColor = d;
+            break;
+        }
+        case BoardTheme::Classic:
+        default:
+        {
+            const Color l = { 240, 240, 240, 255 };
+            const Color d = { 85, 85, 85, 255 };
+            lightColor = l; darkColor = d;
+            break;
+        }
+    }
+
     const Color highlightColor = {0, 255, 0, 100};
+    const Color danger = { 255, 0, 0, 80 };
+
 
     // Draw tiles
     for (int r = 0; r < Board::Tiles; ++r)
@@ -392,7 +434,6 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
 
         if (kr != -1)
         {
-            Color danger = { 255, 0, 0, 100 };
             DrawRectangle(tileLeft(kc), tileTop(kr), m_tileSize, m_tileSize, danger);
         }
     }
@@ -412,8 +453,7 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
     // Draw algebraic notation labels only on the leftmost file (rank numbers)
     // and on the bottom rank (file letters). Labels are subtle and use an
     // inverted color relative to the tile for legibility.
-    const int LABEL_FONT_SIZE = 20;
-    const int SMALL_FONT = LABEL_FONT_SIZE / 2; // use smaller font
+    const int SMALL_FONT = 18; // use smaller font
     const int PADDING = 6;
 
     const char files[] = "abcdefgh";
