@@ -1,161 +1,200 @@
-# Raylib-Quickstart
-A simple cross platform template for setting up a project with the bleeding edge raylib code.
-Works with C or C++.
+Summary — file by file (purpose \& how it works)
 
-# Basic Setup
-Download this repository to get started.
+•	main.cpp
 
-You can download the zip file of the repository from the Green Code button on github. This is the simplest way to get the template to start from.
-Once you have downloaded the template, rename it to your project name.
+•	Application entry, window/audio initialization, main update/render loop.
 
-or
+•	Instantiates Board, renderer, EngineManager.
 
-Clone the repository with git, from the url
-```
-https://github.com/raylib-extras/raylib-quickstart.git
-```
+•	Handles user input (mouse, undo/redo, restart, promotion clicks).
 
-If you are using a command line git client you can use the command below to download and rename the template in one step
-```
-git clone https://github.com/raylib-extras/raylib-quickstart.git [name-for-your-project-here]
-```
+•	Enforces human lock (only allows board clicks when board.getCurrentTurn() == White).
 
-# Naming projects
-* Replace the placeholder with your desired project name when running the git clone command above.
-* __Do not name your game project 'raylib', it will conflict with the raylib library.__
-* If you have used custom game name with __git clone__, there is no need to rename it again.
+•	Orchestrates asynchronous AI cycle using EngineManager::startSearch() and checkBestMove().
+
+•	Plays sounds, prints FEN/PGN, cleans up engine and audio on exit.
+
+•	Board.h / Board.cpp
+
+•	Full game-state model and rules engine.
+
+•	Stores m\_squares as unique\_ptr<Piece>, move history and redo stack, castling rights, en-passant target, clocks.
+
+•	Public API:
+
+•	movePiece(...) — applies a move, does full legality checking (including check), updates history and state, returns MoveResult (Normal, Capture, Castle, Promotion, Check, Invalid).
+
+•	wouldMoveBeLegal(...) — simulates an actual movePiece then undoMove to verify legality.
+
+•	undoMove() / redoMove() — restore and reapply moves using stored ChessMove records.
+
+•	parseEngineMove(string) — converts engine LAN like e2e4 / e7e8q into ChessMove.
+
+•	Promotion workflow: isAwaitingPromotion(), getPendingPromotionSquare(), completePromotion(...).
+
+•	FEN/SAN/PGN utilities: loadFromFEN(), getFEN(), moveToSAN(), setLastMoveSAN(), getFullPGNText().
+
+•	Implementation notes: many operations mutate board state and rely on undo/restore to simulate moves (wouldMoveBeLegal and hasLegalMoves).
+
+•	Piece.h / Piece.cpp
+
+•	Piece class representing a chess piece: type, color, position, moved flag.
+
+•	isValidMove(...) implements per-piece movement rules (pawn, knight, king including castling checks, bishop, rook, queen).
+
+•	Helpers check clear paths for sliding pieces and en-passant logic for pawns.
+
+•	Renderer.h / Renderer.cpp
+
+•	Responsible for drawing board, pieces, overlays and UI sidebar (move history, status).
+
+•	Loads textures via LoadTexture into unordered\_map<string, Texture2D>.
+
+•	render(...) draws tiles, highlights, legal-move hints (calls wouldMoveBeLegal), pieces, promotion picker, move-history text with wrapping and status overlay.
+
+•	Uses raylib draw primitives and MeasureText().
+
+•	EngineManager.h / EngineManager.cpp
+
+•	Manages launching and interacting with a UCI engine (Stockfish) via pipes on Windows.
+
+•	Header deliberately hides Win32 types by using void\* handles (prevents Windows.h macro conflicts).
+
+•	main.cpp includes <windows.h>, creates pipes and process, runs a background thread reading engine stdout, parses bestmove lines, exposes:
+
+•	launch(path), sendCommand(cmd), startSearch(fen, timeMs), checkBestMove(out), shutdown().
+
+•	Background worker reads engine output, prints lines to console, extracts bestmove and sets m\_bestMove + m\_bestMoveReady.
+
+•	resource\_dir.h (utility)
+
+•	Helper to find and set the assets (resources) folder used by Renderer and LoadTexture.
+
+How the parts work together (flow)
+
+•	main.cpp sets up window/audio, creates Board and renderer.
+
+•	renderer uses Board state to draw visuals.
+
+•	User input in main calls Board::movePiece(...) to change state; renderer will reflect that next frame.
+
+•	When it's Black's turn, main triggers EngineManager::startSearch(fen, ms) and sets aiIsThinking = true. The EngineManager background thread eventually sets m\_bestMove. main polls engine.checkBestMove(bestMove) each frame; when true it calls board.parseEngineMove(bestMove) and board.movePiece(...), handles promotion, updates SAN/PGN, plays sounds, sets aiIsThinking=false.
+
+•	EngineManager manages the engine process lifecycle and IO.
+
+Features (detailed)
+
+•	Full chess rule support: castling rights, en-passant, pawn double-step, promotion (deferred to UI), check/checkmate detection via move simulation.
+
+•	Move history with SAN generation and PGN formatted text in sidebar.
+
+•	Undo/redo stack with correct restoration of castling and clocks.
+
+•	Asset-driven rendering with per-piece textures, move hints generated by checking wouldMoveBeLegal.
+
+•	Asynchronous AI opponent using Stockfish: non-blocking start + polling for bestmove.
+
+•	UCI handshake at engine launch (uci/isReady) and background parsing of engine output.
+
+•	Sound feedback for capture/castle/check/promote/normal.
+
+•	Clean engine shutdown on exit.
+
+Where to improve — prioritized suggestions
+
+1\.	Correctness / Robustness (high priority)
+
+•	EngineManager
+
+•	Use go movetime <ms> or go movetime instead of go wtime <ms> btime <ms> which semantically differs — choose proper UCI command depending on time control.
+
+•	On shutdown, avoid TerminateProcess. Prefer sending "quit" to the engine, close stdin, wait for process to exit (WaitForSingleObject) with timeout, then only force terminate if still alive.
+
+•	Properly join the worker thread with timeout and ensure worker exits on shutdown (m\_shouldShutdown + wakeup).
+
+•	Make the engine output parsing more robust: look for bestmove token via tokenization rather than prefix-only; handle Info lines and multiple whitespace variants.
+
+•	Board / Move logic
+
+•	wouldMoveBeLegal and hasLegalMoves mutate the board and copy/restore heavy state vectors. This is correct but expensive and fragile. Implement lightweight makeMove/unmakeMove that records minimal undo info (moved piece pointer, captured piece, en-passant, castling rights, moved flags, clocks). Use these for legality checks and for search.
+
+•	parseEngineMove returns a ChessMove without validation. After parsing, validate the move against board state before applying (to avoid engine output errors causing invalid state).
+
+•	Promotion flow: when engine issues a promotion move, code calls completePromotion which assumes the pending promotion is in history; ensure movePiece recorded the promotion and UI/engine flow matches (it does currently, but double-check race conditions).
+
+2\.	Performance (medium)
+
+•	wouldMoveBeLegal uses full simulation via movePiece + undoMove for every destination when showing hints and when generating legal moves — expensive. Implement a fast isAttacked and move-generation algorithms or use minimal make/unmake to avoid copying vectors.
+
+•	wrapText calls MeasureText repeatedly; cache measurements or compute approximate wrap using character widths to reduce CPU cost.
+
+•	Reduce per-frame allocations: avoid constructing many temporary strings in hot loops (e.g., PGN wrapping each frame). Cache PGN lines and only rebuild on move history change.
+
+•	EngineManager mutex usage: reduce locked sections and prefer lock-free notifications (condition\_variable) for bestmove readiness.
+
+3\.	Concurrency / design (medium)
+
+•	Replace busy-polling checkBestMove with a non-blocking but event-notified pattern: have EngineManager provide a callback or condition\_variable so main can be signaled immediately when bestmove is ready (avoid checking each frame).
+
+•	Hide Win32 details entirely behind a small platform abstraction class; keep void\* in header (already done) but strongly type-cast to Handle in .cpp and centralize all Win32 logic.
+
+4\.	Code quality / maintainability (medium)
+
+•	Split responsibilities: move AI orchestration into a GameController class to keep main.cpp minimal (handle input, call controller.update(), controller.render()).
+
+•	Reduce repetitive std::cout logs from library code and centralize logging behind a log function or macro that can be toggled.
+
+•	Add comments documenting invariants for functions that mutate/restore global board state.
+
+•	Add unit tests for Board (move generation, FEN round-trip, castling/en-passant/promotion edge-cases).
+
+5\.	UX / Features (low)
+
+•	Add an on-screen "AI thinking" indicator and optional abort/stop button.
+
+•	Allow configuration (player side, engine path, time per move) via a settings file or UI.
+
+•	Animate piece movement rather than instant teleport to improve visual feedback.
+
+•	Make promotion selection keyboard-friendly or show recommended promotion by engine when engine promotes.
+
+6\.	Portability \& Build (low)
+
+•	EngineManager is Windows-specific. If cross-platform support is desired, abstract process/pipes behind platform-specific implementations and provide POSIX implementation using fork/exec or popen/pipe.
+
+•	Use FileSystem for path manipulation and resource discovery.
+
+Concrete refactor recommendations (what to change first)
+
+1\.	Implement makeMove / unmakeMove that records a minimal undo struct (piece moved, captured piece type, castling rights, en-passant, moved flags, clocks). Replace wouldMoveBeLegal and hasLegalMoves to use these lightweight operations. This will dramatically reduce CPU and allocations during move generation and rendering hints.
+
+2\.	Improve EngineManager shutdown: send "quit", close stdin, wait on process handle, then join thread; avoid TerminateProcess.
+
+3\.	Replace engine.startSearch(... go wtime btime ...) with proper go movetime or configurable UCI command.
+
+4\.	Cache sidebar PGN lines and only recompute when move history changes.
+
+5\.	Add a GameController to move AI logic out of main, simplifying the main loop and making code easier to test.
+
+Potential bugs / gotchas to verify
+
+•	MeasureText and DrawText coordinates used in renderer assume default font loaded; if resource folder changes font metrics may vary.
+
+•	Board::getFEN() numeric characters for empty squares are built using '0'+empty which fails if empty >= 10 (not applicable here), but valid.
+
+•	startSearch currently clears m\_bestMove under mutex — ensure no race where background sets m\_bestMove after clearing but before go command is processed. Use sendCommand("position ...") followed by sendCommand("go ...") and then clear only after sending go or before sending go but then ensure ordering.
+
+•	EngineManager goCmd uses both wtime and btime with the same timeMs value; semantics differ; also the engine expects milliseconds for wtime/btime but these should be remaining time, not fixed think time. Using go movetime timeMs is clearer.
+
+If you want, I can:
+
+•	Implement makeMove/unmakeMove scaffolding and refactor wouldMoveBeLegal to use it (largest performance win).
+
+•	Improve EngineManager shutdown and use go movetime.
+
+•	Move AI orchestration into a GameController class and clean main.cpp.
+
+Which change should I implement first?
 
 
-## Supported Platforms
-Quickstart supports the main 3 desktop platforms:
-* Windows
-* Linux
-* MacOS
-
-# VSCode Users (all platforms)
-*Note* You must have a compiler toolchain installed in addition to vscode.
-
-1. Download the quickstart
-2. Rename the folder to your game name
-3. Open the folder in VSCode
-4. Run the build task ( CTRL+SHIFT+B or F5 )
-5. You are good to go
-
-# Windows Users
-There are two compiler toolchains available for windows, MinGW-W64 (a free compiler using GCC), and Microsoft Visual Studio
-## Using MinGW-W64
-* Rename the folder to your game name
-* Double click the `build-MinGW-W64.bat` file
-* CD into the folder in your terminal
-  * if you are using the W64devkit and have not added it to your system path environment variable, you must use the W64devkit.exe terminal, not CMD.exe
-  * If you want to use cmd.exe or any other terminal, please make sure that gcc/mingw-W64 is in your path environment variable.
-* run `make`
-* You are good to go
-
-### Note on MinGW-64 versions
-Make sure you have a modern version of MinGW-W64 (not mingw).
-The best place to get it is from the W64devkit from
-https://github.com/skeeto/w64devkit/releases
-
-or the version installed with the raylib installer
-
-#### If you have installed raylib from the installer
-Make sure you have added the path
-
-`C:\raylib\w64devkit\bin`
-
-To your path environment variable so that the compiler that came with raylib can be found.
-
-DO NOT INSTALL ANOTHER MinGW-W64 from another source such as msys2, you don't need it.
-
-## Microsoft Visual Studio 2026
-* Rename the folder to your game name
-* Run `build-VisualStudio2026.bat`
-* double click the `.slnx` file that is generated
-* develop your game
-* you are good to go
-
-# Linux Users
-* Rename the folder to your game name
-* CD into the build folder
-* run `./premake5 gmake`
-* CD back to the root
-* run `make`
-* you are good to go
-
-# MacOS Users
-* Rename the folder to your game name
-* CD into the build folder
-* run `./premake5.osx gmake`
-* CD back to the root
-* run `make`
-* you are good to go
-
-# Output files
-The built code will be in the bin dir
-
-# Working directories and the resources folder
-The example uses a utility function from `path_utils.h` that will find the resources dir and set it as the current working directory. This is very useful when starting out. If you wish to manage your own working directory you can simply remove the call to the function and the header.
-
-# Changing to C++
-Simply rename `src/main.c` to `src/main.cpp` and re-run the steps above and do a clean build.
-
-# Using your own code
-Simply remove `src/main.c` and replace it with your code, and re-run the steps above and do a clean build.
-
-# Building for other OpenGL targets
-If you need to build for a different OpenGL version than the default (OpenGL 3.3) you can specify an OpenGL version in your premake command line. Just modify the bat file or add the following to your command line
-
-## For OpenGL 1.1
-`--graphics=opengl11`
-
-## For OpenGL 2.1
-`--graphics=opengl21`
-
-## For OpenGL 4.3
-`--graphics=opengl43`
-
-## For OpenGLES 2.0
-`--graphics=opengles2`
-
-## For OpenGLES 3.0
-`--graphics=opengles3`
-
-## For Software Rendering
-`--graphics=software`
-
-*Note*
-Sofware rendering does not work with glfw, use Win32 or SDL platforms
-`--backend=win32`
-
-# Adding External Libraries 
-
-Quickstart is intentionally minimal — it only includes what is required to compile and run a basic raylib project.  
-If you want to use extra libraries, you can add them to the `build/premake5.lua` file yourself using the links function.
-
-You can find the documentation for the links function here https://premake.github.io/docs/links/
-
-### Example: adding the required libraries for tinyfiledialogs on Windows
-tinyfiledialogs requires extra Windows system libraries.
-The premake file uses filters to define options that are platform specific
-https://premake.github.io/docs/Filters/
-
-Using the windows filter adds these libraries only to the windows build.
-```
-filter "system:windows"
-    links {
-        "Comdlg32",
-        "User32",
-        "Ole32",
-        "Shell32"
-    }
-```
-
-### Cross-platform reminder
-If you add a library, make sure to add its required dependencies for all platforms you plan to support (Windows, Linux, MacOS).
-Different libraries will have different dependencies on different platforms.
-
-
-# License
-Raylib-Quickstart by Jeffery Myers is marked with CC0 1.0. To view a copy of this license, visit https://creativecommons.org/publicdomain/zero/1.0/
 

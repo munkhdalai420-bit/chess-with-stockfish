@@ -30,6 +30,7 @@ private:
     int m_sidebarWidth = 300;
 
     std::unordered_map<std::string, Texture2D> m_textures; // key like "k_l" => texture
+    Font m_mainFont; // custom font used for UI text (loaded at runtime)
 
     std::string textureFilenameForKey(const std::string& key) const;
     const Texture2D* textureForKey(const std::string& key) const;

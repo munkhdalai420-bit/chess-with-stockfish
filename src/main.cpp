@@ -18,8 +18,8 @@ static constexpr int SIDEBAR_WIDTH = 300;
 
 int main()
 {
-    // Tell the window to use vsync and work on high DPI displays
-    SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI);
+    // Tell the window to use vsync, work on high DPI displays, and request 4x MSAA
+    SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT);
 
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Chess - Rendering Foundation");
 
@@ -74,7 +74,7 @@ int main()
         }
 
         // Restart
-        if (IsKeyPressed(KEY_R))
+        if (IsKeyPressed(KEY_SPACE))
         {
             board = Board();
             board.initializeStandardSetup();

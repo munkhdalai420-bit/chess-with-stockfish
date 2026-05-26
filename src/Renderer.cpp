@@ -6,7 +6,7 @@
 #include <vector>
 #include <sstream>
 
-static std::vector<std::string> wrapText(const std::string &text, int maxWidth, int fontSize)
+static std::vector<std::string> wrapText(const std::string &text, int maxWidth, int fontSize, const Font &font)
 {
     std::vector<std::string> lines;
     std::istringstream iss(text);
@@ -15,7 +15,7 @@ static std::vector<std::string> wrapText(const std::string &text, int maxWidth, 
     while (iss >> word)
     {
         std::string tryLine = cur.empty() ? word : (cur + " " + word);
-        int w = MeasureText(tryLine.c_str(), fontSize);
+        int w = (int)MeasureTextEx(font, tryLine.c_str(), (float)fontSize, 0).x;
         if (w <= maxWidth)
         {
             cur = tryLine;
@@ -24,7 +24,7 @@ static std::vector<std::string> wrapText(const std::string &text, int maxWidth, 
         {
             if (!cur.empty()) lines.push_back(cur);
             // if single word is too long, force it on a line
-            if (MeasureText(word.c_str(), fontSize) > maxWidth)
+            if ((int)MeasureTextEx(font, word.c_str(), (float)fontSize, 0).x > maxWidth)
             {
                 // split the word (naive): push as is
                 lines.push_back(word);
@@ -49,6 +49,14 @@ Renderer::Renderer(int windowWidth, int windowHeight, int tileSize)
     if (availableWidth < m_boardPixelSize) availableWidth = m_boardPixelSize; // avoid negative
     m_boardOriginX = (availableWidth - m_boardPixelSize) / 2;
     m_boardOriginY = (m_windowHeight - m_boardPixelSize) / 2;
+
+    // Load custom main font for UI rendering. Raster size 32 by default.
+    m_mainFont = LoadFontEx("google_font.ttf", 32, NULL, 0);
+    if (m_mainFont.texture.id == 0)
+    {
+        std::printf("Warning: failed to load 'resources/google_font.ttf', falling back to default font\n");
+        m_mainFont = GetFontDefault();
+    }
 }
 
 int Renderer::tileLeft(int col) const
@@ -72,6 +80,14 @@ Renderer::~Renderer()
     for (auto &kv : m_textures)
     {
         UnloadTexture(kv.second);
+    }
+
+    // Unload custom font (if it was loaded)
+    if (m_mainFont.texture.id != 0)
+    {
+        // If it's the default font, UnloadFont is a no-op for that font in raylib,
+        // but calling UnloadFont on a loaded custom font frees GPU resources.
+        UnloadFont(m_mainFont);
     }
 }
 
@@ -200,17 +216,17 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
 
     // Title
     const int titleFont = 24;
-    const int bodyFont = 20; // monospaced not available, use default
+    const int bodyFont = 20; // monospaced not available, use custom font
     const int padding = 12;
     const Color textCol = { 220, 220, 220, 255 };
-    DrawText("Move History", panelX + padding, panelY + padding, titleFont, textCol);
+    DrawTextEx(m_mainFont, "Move History", { (float)(panelX + padding), (float)(panelY + padding) }, (float)titleFont, 0.0f, textCol);
 
     // PGN text
     std::string pgn = board.getFullPGNText();
     int innerW = panelW - padding * 2;
-    std::vector<std::string> lines = wrapText(pgn, innerW, bodyFont);
+    std::vector<std::string> lines = wrapText(pgn, innerW, bodyFont, m_mainFont);
 
-    int titleH = MeasureText("Move History", titleFont);
+    int titleH = (int)MeasureTextEx(m_mainFont, "Move History", (float)titleFont, 0.0f).y;
     int availableH = panelH - (padding * 3 + titleH);
     int lineH = bodyFont + 6;
     int totalH = (int)lines.size() * lineH;
@@ -231,7 +247,7 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     {
         int y = startY + (int)i * lineH;
         if (y + lineH > panelY + panelH - padding) break; // clip
-        DrawText(lines[i].c_str(), panelX + padding, y, bodyFont, textCol);
+        DrawTextEx(m_mainFont, lines[i].c_str(), { (float)(panelX + padding), (float)y }, (float)bodyFont, 0.0f, textCol);
     }
     // Draw status text (turn, check, checkmate)
     // Keep this after pieces so it appears on top
@@ -262,10 +278,10 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
         status = "Stalemate - Draw";
     }
 
-    int sw = MeasureText(status.c_str(), STATUS_FONT_SIZE);
+    int sw = (int)MeasureTextEx(m_mainFont, status.c_str(), (float)STATUS_FONT_SIZE, 0.0f).x;
     int sx = (panelW - sw) / 2;
     int sy = 8;
-    DrawText(status.c_str(), sx, sy, STATUS_FONT_SIZE, statusColor);
+    DrawTextEx(m_mainFont, status.c_str(), { (float)sx, (float)sy }, (float)STATUS_FONT_SIZE, 0.0f, statusColor);
 
     // Game over overlay (checkmate or stalemate)
     if (gs == Board::GameState::Checkmate || gs == Board::GameState::Stalemate)
@@ -281,10 +297,10 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
         int bx = (m_windowWidth - boxW) / 2;
         int by = (m_windowHeight - boxH) / 2;
         DrawRectangle(bx, by, boxW, boxH, Fade(BLACK, 0.6f));
-        DrawText(status.c_str(), bx + 20, by + 10, BOX_FONT, WHITE);
+        DrawTextEx(m_mainFont, status.c_str(), { (float)(bx + 20), (float)(by + 10) }, (float)BOX_FONT, 0.0f, WHITE);
         const char* sub = "Press R to Restart";
-        int sw2 = MeasureText(sub, SUB_FONT);
-        DrawText(sub, (m_windowWidth - sw2) / 2, by + 10 + BOX_FONT + 8, SUB_FONT, WHITE);
+        int sw2 = (int)MeasureTextEx(m_mainFont, sub, (float)SUB_FONT, 0.0f).x;
+        DrawTextEx(m_mainFont, sub, { (float)((m_windowWidth - sw2) / 2), (float)(by + 10 + BOX_FONT + 8) }, (float)SUB_FONT, 0.0f, WHITE);
     }
 
     // Promotion overlay
@@ -414,7 +430,7 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
 
         int x = tileLeft(0) + PADDING;
         int y = tileTop(r) + PADDING;
-        DrawText(rankStr.c_str(), x, y, SMALL_FONT, textColor);
+        DrawTextEx(m_mainFont, rankStr.c_str(), { (float)x, (float)y }, (float)SMALL_FONT, 0.0f, textColor);
     }
 
     // Files on bottom-most rank '1' (bottom-right corner of the tile)
@@ -427,10 +443,10 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
         bool isLight = ((bottomRow + c) % 2) == 0;
         const Color textColor = isLight ? darkColor : lightColor;
 
-        int textW = MeasureText(fileStr, SMALL_FONT);
+        int textW = (int)MeasureTextEx(m_mainFont, fileStr, (float)SMALL_FONT, 0.0f).x;
         int x = tileLeft(c) + m_tileSize - textW - PADDING;
         int y = tileTop(bottomRow) + m_tileSize - SMALL_FONT - PADDING / 2;
-        DrawText(fileStr, x, y, SMALL_FONT, textColor);
+        DrawTextEx(m_mainFont, fileStr, { (float)x, (float)y }, (float)SMALL_FONT, 0.0f, textColor);
     }
 }
 
