@@ -69,4 +69,6 @@ private:
     bool m_animatePieces = true;    // toggle for animations
     PieceAnimation m_currentAnim;
     Rectangle m_animCheckboxBounds;
+    // Vertical scroll offset for the move history panel (pixels)
+    float m_historyScrollOffset = 0.0f;
 };

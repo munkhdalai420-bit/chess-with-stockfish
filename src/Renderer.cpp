@@ -468,37 +468,130 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
         }
     }
 
-    // Move History title and PGN listing under controls
+    // Move History title and dedicated scrollable list under controls
     DrawTextEx(m_mainFont, "Move History", { (float)(panelX + padding), (float)(CTRL_Y + ctrlH * 2 + 2 * ctrlPad) }, (float)titleFont, 0.0f, textCol);
 
-    // PGN text
+    // Prepare history box geometry
     std::string pgn = board.getFullPGNText();
     int innerW = panelW - padding * 2;
-    std::vector<std::string> lines = wrapText(pgn, innerW, bodyFont, m_mainFont);
-
     int titleH = (int)MeasureTextEx(m_mainFont, "Move History", (float)titleFont, 0.0f).y;
-    int headerArea = (int)(CTRL_Y + ctrlH * 2 + 2 * ctrlPad + titleH + padding);
-    int availableH = panelH - headerArea - (padding + 48); // leave space for theme controls at bottom
-    int lineH = bodyFont + 6;
-    int totalH = (int)lines.size() * lineH;
+    int historyX = panelX + padding;
+    int historyY = (int)(CTRL_Y + ctrlH * 2 + 2 * ctrlPad + titleH + padding);
+    int historyW = innerW;
+    int historyH = panelH - historyY - (padding + 48); // leave space for theme controls at bottom
+    Rectangle historyBox = { (float)historyX, (float)historyY, (float)historyW, (float)historyH };
 
-    int startY;
-    if (totalH > availableH)
+    // Draw background for history area (subtle)
+    DrawRectangle(historyX, historyY, historyW, historyH, Fade(BLACK, 0.25f));
+
+    // Build move-pair lines from PGN (e.g. "1. e4 e5", "2. Nf3 Nc6")
+    std::vector<std::string> moveLines;
+    std::vector<bool> hasBlack; // parallel array: does this line include a black move?
     {
-        // pin to top of history area (allow scrolling later)
-        startY = panelY + headerArea;
+        std::istringstream iss(pgn);
+        std::vector<std::string> tokens;
+        std::string tok;
+        while (iss >> tok) tokens.push_back(tok);
+
+        for (size_t i = 0; i < tokens.size(); )
+        {
+            // Expect a move number token like "1." or "12."
+            if (tokens[i].find('.') != std::string::npos)
+            {
+                std::string num = tokens[i];
+                std::string white = "";
+                std::string black = "";
+                if (i + 1 < tokens.size()) white = tokens[i+1];
+                if (i + 2 < tokens.size() && tokens[i+2].find('.') == std::string::npos) black = tokens[i+2];
+
+                std::string line = num;
+                if (!white.empty()) line += " " + white;
+                if (!black.empty()) line += " " + black;
+                moveLines.push_back(line);
+                hasBlack.push_back(!black.empty());
+
+                // Advance: consume move number + white (+ black)
+                i += 1;
+                if (!white.empty()) i += 1;
+                if (!black.empty()) i += 1;
+            }
+            else
+            {
+                // Malformed token sequence: bail by treating remaining tokens as single lines
+                std::string rest;
+                for (; i < tokens.size(); ++i)
+                {
+                    if (!rest.empty()) rest += " ";
+                    rest += tokens[i];
+                }
+                if (!rest.empty()) { moveLines.push_back(rest); hasBlack.push_back(false); }
+                break;
+            }
+        }
+    }
+
+    int lineH = bodyFont + 6;
+    int totalH = (int)moveLines.size() * lineH;
+
+    // Mouse wheel scrolling when pointer over history box
+    Vector2 mp_hist = GetMousePosition();
+    if (CheckCollisionPointRec(mp_hist, historyBox))
+    {
+        float wheel = GetMouseWheelMove();
+        if (wheel != 0.0f)
+        {
+            m_historyScrollOffset -= wheel * 24.0f; // 24px per scroll step
+        }
+    }
+
+    // Clamp scroll offset between 0 and max (so user can't scroll into empty space)
+    if (m_historyScrollOffset < 0.0f) m_historyScrollOffset = 0.0f;
+    if (totalH > historyH)
+    {
+        float maxOff = (float)(totalH - historyH);
+        if (m_historyScrollOffset > maxOff) m_historyScrollOffset = maxOff;
     }
     else
     {
-        startY = panelY + headerArea;
+        m_historyScrollOffset = 0.0f;
     }
 
-    // Draw lines (clip to the area above theme button)
-    for (size_t i = 0; i < lines.size(); ++i)
+    // Clip drawing to historyBox and draw lines with offset; support clicking to jump to history index
+    BeginScissorMode(historyX, historyY, historyW, historyH);
+    for (int idx = 0; idx < (int)moveLines.size(); ++idx)
     {
-        int y = startY + (int)i * lineH;
-        if (y + lineH > panelY + panelH - padding - 64) break; // clip before bottom controls
-        DrawTextEx(m_mainFont, lines[i].c_str(), { (float)(panelX + padding), (float)y }, (float)bodyFont, 0.0f, textCol);
+        float itemY = (float)historyY + (float)idx * lineH - m_historyScrollOffset;
+        DrawTextEx(m_mainFont, moveLines[idx].c_str(), { (float)historyX, itemY }, (float)bodyFont, 0.0f, textCol);
+
+        // Click handling: if clicked inside this line, compute target ply index and notify controller
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+        {
+            Vector2 mp = GetMousePosition();
+            Rectangle itemRect = { (float)historyX, itemY, (float)historyW - 12.0f, (float)lineH };
+            if (CheckCollisionPointRec(mp, itemRect))
+            {
+                // Determine target history index (ply). For line idx (0-based):
+                // white ply = idx*2 + 1, black ply = idx*2 + 2 (if present)
+                size_t targetPly = idx * 2 + 1;
+                if (hasBlack[idx]) targetPly = idx * 2 + 2;
+                // Cap to available evaluation/history size will be handled by controller
+                controller.goToHistoryIndex(targetPly);
+            }
+        }
+    }
+    EndScissorMode();
+
+    // Simple scrollbar to the right of the history box when content exceeds height
+    if (totalH > historyH)
+    {
+        int sbX = historyX + historyW - 8;
+        int sbY = historyY;
+        int sbW = 6;
+        int sbH = historyH;
+        DrawRectangle(sbX, sbY, sbW, sbH, Fade(WHITE, 0.08f));
+        float thumbH = std::max(20.0f, (float)historyH * (float)historyH / (float)totalH);
+        float thumbY = sbY + (m_historyScrollOffset / (float)(totalH - historyH)) * (sbH - thumbH);
+        DrawRectangle(sbX, (int)thumbY, sbW, (int)thumbH, Fade(WHITE, 0.25f));
     }
 
     // Theme button at bottom of sidebar (moved from main.cpp)
