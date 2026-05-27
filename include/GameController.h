@@ -7,10 +7,12 @@
 #include "EngineManager.h"
 #include "raylib.h"
 
+class Renderer;
+
 class GameController
 {
 public:
-    GameController(int windowWidth, int windowHeight, int tileSize, int sidebarWidth);
+    GameController(int windowWidth, int windowHeight, int tileSize, int sidebarWidth, Renderer* renderer);
     ~GameController();
 
     // Elo options and configuration
@@ -74,6 +76,7 @@ private:
     int m_windowHeight;
     int m_tileSize;
     int m_sidebarWidth;
+    Renderer* m_renderer = nullptr;
 
     // Sound effects
     Sound m_sndCapture;

@@ -7,6 +7,7 @@
 #include <sstream>
 #include "GameController.h"
 #include <cmath>
+#include "raymath.h"
 
 static std::vector<std::string> wrapText(const std::string &text, int maxWidth, int fontSize, const Font &font)
 {
@@ -22,6 +23,8 @@ static std::vector<std::string> wrapText(const std::string &text, int maxWidth, 
         {
             cur = tryLine;
         }
+
+
         else
         {
             if (!cur.empty()) lines.push_back(cur);
@@ -41,7 +44,18 @@ static std::vector<std::string> wrapText(const std::string &text, int maxWidth, 
     if (!cur.empty()) lines.push_back(cur);
     return lines;
 }
-
+void Renderer::triggerMoveAnimation(int fromX, int fromY, int toX, int toY, char pieceChar, char pieceColor)
+{
+    if (!m_animatePieces) return;
+    m_currentAnim.isActive = true;
+    m_currentAnim.fromX = fromX;
+    m_currentAnim.fromY = fromY;
+    m_currentAnim.toX = toX;
+    m_currentAnim.toY = toY;
+    m_currentAnim.progress = 0.0f;
+    m_currentAnim.pieceChar = pieceChar;
+    m_currentAnim.pieceColor = pieceColor;
+}
 Renderer::Renderer(int windowWidth, int windowHeight, int tileSize)
     : m_windowWidth(windowWidth), m_windowHeight(windowHeight), m_tileSize(tileSize)
 {
@@ -195,6 +209,29 @@ bool Renderer::loadTextures()
 
 void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller)
 {
+    // Update animation progress (if active)
+    const float ANIM_DURATION = 0.14f; // seconds for a single piece move
+    if (m_currentAnim.isActive)
+    {
+        if (!m_animatePieces)
+        {
+            m_currentAnim.isActive = false;
+        }
+        else
+        {
+            // Verify last move matches the animation target; if not, cancel animation to avoid desync
+            auto last = board.getLastMove();
+            if (!last.has_value() || last->r1 != m_currentAnim.fromY || last->c1 != m_currentAnim.fromX ||
+                last->r2 != m_currentAnim.toY || last->c2 != m_currentAnim.toX)
+            {
+                // If the board state changed (undo/redo), cancel the animation
+                m_currentAnim.isActive = false;
+            }
+            // Note: progress is advanced during the piece-drawing stage so we can use
+            // Vector2Lerp and draw the moving sprite on top of the static board.
+        }
+    }
+
     // If Disco mode is active, we let drawBoard pick colors dynamically based on time.
     drawBoard(board, selected);
 
@@ -483,6 +520,26 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
         {
             cycleTheme();
         }
+
+        // Animation toggle checkbox to the right of the theme button
+        const float cbSize = 20.0f;
+        float cbX = themeRect.x + boxW + 12.0f;
+        float cbY = themeRect.y + (boxH - cbSize) / 2.0f;
+        m_animCheckboxBounds = { cbX, cbY, cbSize, cbSize };
+        // checkbox background
+        DrawRectangleRec(m_animCheckboxBounds, m_animatePieces ? Fade(WHITE, 0.95f) : Fade(WHITE, 0.15f));
+        DrawRectangleLines((int)cbX, (int)cbY, (int)cbSize, (int)cbSize, Fade(WHITE, 0.6f));
+        // label
+        DrawTextEx(m_mainFont, "Animation", Vector2{ themeRect.x + boxW + 12.0f + cbSize + 8.0f, themeRect.y + 4.0f }, 16.0f, 0.0f, WHITE);
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+        {
+            Vector2 mp2 = GetMousePosition();
+            if (CheckCollisionPointRec(mp2, m_animCheckboxBounds))
+            {
+                m_animatePieces = !m_animatePieces;
+                if (!m_animatePieces) m_currentAnim.isActive = false; // stop any running animation
+            }
+        }
     }
 
     // Game over overlay (checkmate or stalemate)
@@ -704,12 +761,20 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
     }
 }
 
-void Renderer::drawPieces(Board& board) const
+void Renderer::drawPieces(Board& board)
 {
+    // Draw static pieces, but skip the destination tile of an active animation so we can draw
+    // the moving piece separately and avoid duplication.
     for (int r = 0; r < Board::Tiles; ++r)
     {
         for (int c = 0; c < Board::Tiles; ++c)
         {
+            if (m_currentAnim.isActive && m_animatePieces && r == m_currentAnim.toY && c == m_currentAnim.toX)
+            {
+                // Destination will be drawn as the moving sprite to avoid duplication
+                continue;
+            }
+
             const Piece* p = board.at(r, c);
             if (!p) continue;
 
@@ -733,6 +798,50 @@ void Renderer::drawPieces(Board& board) const
 
             // No rotation, white tint
             DrawTexturePro(*tex, srcRec, dstRec, {0,0}, 0.0f, WHITE);
+        }
+    }
+
+    // Draw animated moving piece on top if active
+    if (m_currentAnim.isActive && m_animatePieces)
+    {
+        // Centers for start/end squares
+        Vector2 startPos = { (float)tileLeft(m_currentAnim.fromX) + m_tileSize * 0.5f,
+                             (float)tileTop(m_currentAnim.fromY) + m_tileSize * 0.5f };
+        Vector2 targetPos = { (float)tileLeft(m_currentAnim.toX) + m_tileSize * 0.5f,
+                              (float)tileTop(m_currentAnim.toY) + m_tileSize * 0.5f };
+
+        // Advance progress (speed multiplier 6.0f as requested)
+
+        m_currentAnim.progress += GetFrameTime() * 6.0f;
+        if (m_currentAnim.progress > 1.0f) m_currentAnim.progress = 1.0f;
+
+        float curvedProgress = m_currentAnim.progress * m_currentAnim.progress * (3.0f - 2.0f * m_currentAnim.progress);
+
+        Vector2 cur = Vector2Lerp(startPos, targetPos, curvedProgress);
+
+        std::string key;
+        key.push_back(m_currentAnim.pieceChar);
+        key.push_back(m_currentAnim.pieceColor);
+        const Texture2D* tex = textureForKey(key);
+        if (tex)
+        {
+            float srcW = (float)tex->width;
+            float srcH = (float)tex->height;
+            float maxW = (float)m_tileSize * 0.85f; // same padding
+            float maxH = (float)m_tileSize * 0.85f;
+            float scale = std::min(maxW / srcW, maxH / srcH);
+            float drawW = srcW * scale;
+            float drawH = srcH * scale;
+            Rectangle srcRec = { 0.0f, 0.0f, srcW, srcH };
+            Rectangle dstRec = { cur.x - drawW / 2.0f, cur.y - drawH / 2.0f, drawW, drawH };
+            DrawTexturePro(*tex, srcRec, dstRec, {0,0}, 0.0f, WHITE);
+        }
+
+        // Clean reset: when finished, disable animation so next frame the board draws normally
+        if (m_currentAnim.progress >= 1.0f)
+        {
+            m_currentAnim.isActive = false;
+            m_currentAnim.progress = 0.0f;
         }
     }
 }

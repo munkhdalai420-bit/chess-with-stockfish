@@ -28,6 +28,8 @@ public:
     // 'evaluation' is a signed value (positive = White advantage) corresponding
     // to the currently displayed history index.
     void render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller);
+    // Trigger a move animation (from tile X/Y to tile X/Y). X==col, Y==row
+    void triggerMoveAnimation(int fromX, int fromY, int toX, int toY, char pieceChar, char pieceColor);
 
 private:
     int m_windowWidth;
@@ -47,11 +49,24 @@ private:
     const Texture2D* textureForKey(const std::string& key) const;
 
     void drawBoard(Board& board, const std::optional<std::pair<int,int>>& selected) const;
-    void drawPieces(Board& board) const;
+    void drawPieces(Board& board);
     // Cycle the visual theme (used by UI)
     void cycleTheme();
     // Helpers
     int tileLeft(int col) const;
     int tileTop(int row) const;
     Rectangle tileRect(int row, int col) const;
+    // Animation toggle and state
+    struct PieceAnimation {
+        bool isActive = false;
+        int fromX = -1, fromY = -1; // Starting grid coordinates (col,row)
+        int toX = -1, toY = -1;     // Ending grid coordinates (col,row)
+        float progress = 0.0f;      // 0.0 .. 1.0
+        char pieceChar = 0;         // e.g., 'p','k','q'
+        char pieceColor = 0;        // 'l' or 'd'
+    };
+
+    bool m_animatePieces = true;    // toggle for animations
+    PieceAnimation m_currentAnim;
+    Rectangle m_animCheckboxBounds;
 };

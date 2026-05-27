@@ -45,7 +45,7 @@ int main()
     int themeIndex = 0;
 
     // Create game controller which owns the Board, EngineManager, and audio
-    GameController controller(WINDOW_WIDTH, WINDOW_HEIGHT, TILE_SIZE, SIDEBAR_WIDTH);
+    GameController controller(WINDOW_WIDTH, WINDOW_HEIGHT, TILE_SIZE, SIDEBAR_WIDTH, &renderer);
 
     while (!WindowShouldClose())
     {

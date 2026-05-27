@@ -2,13 +2,14 @@
 
 #include <iostream>
 #include <algorithm>
+#include "Renderer.h"
 
 // Define Elo options
 const int GameController::ELO_OPTIONS[GameController::ELO_COUNT] = { 500, 1000, 1500, 2000 };
 
-GameController::GameController(int windowWidth, int windowHeight, int tileSize, int sidebarWidth)
+GameController::GameController(int windowWidth, int windowHeight, int tileSize, int sidebarWidth, Renderer* renderer)
     : m_windowWidth(windowWidth), m_windowHeight(windowHeight), m_tileSize(tileSize), m_sidebarWidth(sidebarWidth),
-      m_sndCapture{}, m_sndCastle{}, m_sndMoveCheck{}, m_sndMoveSelf{}, m_sndPromote{}
+      m_sndCapture{}, m_sndCastle{}, m_sndMoveCheck{}, m_sndMoveSelf{}, m_sndPromote{}, m_renderer(renderer)
 {
     // Initialize audio device and load sound effects
     InitAudioDevice();
@@ -323,6 +324,15 @@ void GameController::update()
                     }
                     else
                     {
+                        // Trigger animation (renderer expects X=col, Y=row) before applying the move
+                        const Piece* moving = m_board.at(sr, sc);
+                        if (moving && m_renderer)
+                        {
+                            std::string ak = moving->assetKey();
+                            if (ak.size() >= 2)
+                                m_renderer->triggerMoveAnimation(sc, sr, col, row, ak[0], ak[1]);
+                        }
+
                         Board::MoveResult res = m_board.movePiece(sr, sc, row, col);
                         if (res != Board::MoveResult::Invalid)
                         {
@@ -412,6 +422,14 @@ void GameController::update()
         if (m_engine.checkBestMove(bestMove))
         {
             Board::ChessMove engineMove = m_board.parseEngineMove(bestMove);
+            // Trigger animation (renderer expects X=col, Y=row) before applying the move
+            const Piece* moving = m_board.at(engineMove.r1, engineMove.c1);
+            if (moving && m_renderer)
+            {
+                std::string ak = moving->assetKey();
+                if (ak.size() >= 2)
+                    m_renderer->triggerMoveAnimation(engineMove.c1, engineMove.r1, engineMove.c2, engineMove.r2, ak[0], ak[1]);
+            }
             Board::MoveResult res = m_board.movePiece(engineMove.r1, engineMove.c1, engineMove.r2, engineMove.c2);
 
             if (res != Board::MoveResult::Invalid)
