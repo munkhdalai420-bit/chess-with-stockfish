@@ -81,4 +81,5 @@ private:
     Sound m_sndMoveCheck;
     Sound m_sndMoveSelf;
     Sound m_sndPromote;
+    bool m_audioEnabled = false; // false if audio device or assets unavailable
 };

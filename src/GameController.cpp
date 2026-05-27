@@ -13,11 +13,40 @@ GameController::GameController(int windowWidth, int windowHeight, int tileSize, 
     // Initialize audio device and load sound effects
     InitAudioDevice();
 
-    m_sndCapture = LoadSound("capture.mp3");
-    m_sndCastle = LoadSound("castle.mp3");
-    m_sndMoveCheck = LoadSound("move-check.mp3");
-    m_sndMoveSelf = LoadSound("move-self.mp3");
-    m_sndPromote = LoadSound("promote.mp3");
+    // Only attempt to load sounds if audio device is available
+    m_audioEnabled = IsAudioDeviceReady();
+    if (m_audioEnabled)
+    {
+        m_sndCapture = LoadSound("capture.mp3");
+        m_sndCastle = LoadSound("castle.mp3");
+        m_sndMoveCheck = LoadSound("move-check.mp3");
+        m_sndMoveSelf = LoadSound("move-self.mp3");
+        m_sndPromote = LoadSound("promote.mp3");
+
+        // Validate loaded sounds: raylib Sound contains a data pointer when valid
+        bool anyFailed = false;
+        if (m_sndCapture.frameCount == 0) { std::printf("Warning: failed to load 'capture.mp3'\n"); anyFailed = true; }
+        if (m_sndCastle.frameCount == 0) { std::printf("Warning: failed to load 'castle.mp3'\n"); anyFailed = true; }
+        if (m_sndMoveCheck.frameCount == 0) { std::printf("Warning: failed to load 'move-check.mp3'\n"); anyFailed = true; }
+        if (m_sndMoveSelf.frameCount == 0) { std::printf("Warning: failed to load 'move-self.mp3'\n"); anyFailed = true; }
+        if (m_sndPromote.frameCount == 0) { std::printf("Warning: failed to load 'promote.mp3'\n"); anyFailed = true; }
+
+        if (anyFailed)
+        {
+            // Unload any that did load and disable audio playback to avoid calling PlaySound on invalid sounds
+            if (m_sndCapture.frameCount) UnloadSound(m_sndCapture);
+            if (m_sndCastle.frameCount) UnloadSound(m_sndCastle);
+            if (m_sndMoveCheck.frameCount) UnloadSound(m_sndMoveCheck);
+            if (m_sndMoveSelf.frameCount) UnloadSound(m_sndMoveSelf);
+            if (m_sndPromote.frameCount) UnloadSound(m_sndPromote);
+            m_audioEnabled = false;
+            std::printf("Audio disabled due to missing sound assets or load failure.\n");
+        }
+    }
+    else
+    {
+        std::printf("Audio device not available: audio disabled.\n");
+    }
 
     m_board.initializeStandardSetup();
 
@@ -76,15 +105,18 @@ GameController::~GameController()
     // Shutdown engine first
     m_engine.shutdown();
 
-    // Unload sounds
-    UnloadSound(m_sndCapture);
-    UnloadSound(m_sndCastle);
-    UnloadSound(m_sndMoveCheck);
-    UnloadSound(m_sndMoveSelf);
-    UnloadSound(m_sndPromote);
+    // Unload sounds and close audio device if audio was enabled
+    if (m_audioEnabled)
+    {
+        UnloadSound(m_sndCapture);
+        UnloadSound(m_sndCastle);
+        UnloadSound(m_sndMoveCheck);
+        UnloadSound(m_sndMoveSelf);
+        UnloadSound(m_sndPromote);
 
-    // Close audio device
-    CloseAudioDevice();
+        // Close audio device
+        CloseAudioDevice();
+    }
 }
 
 Board& GameController::getBoard()
@@ -239,9 +271,9 @@ void GameController::update()
                     case 3: choice = PieceType::Knight; break;
                     }
                     Board::MoveResult pres = m_board.completePromotion(choice);
-                    if (pres == Board::MoveResult::Promotion)
+                        if (pres == Board::MoveResult::Promotion)
                     {
-                        PlaySound(m_sndPromote);
+                        if (m_audioEnabled) PlaySound(m_sndPromote);
                         auto last = m_board.getLastMove();
                         if (last.has_value())
                         {
@@ -299,15 +331,15 @@ void GameController::update()
 
                             if (res == Board::MoveResult::Check)
                             {
-                                PlaySound(m_sndMoveCheck);
+                                if (m_audioEnabled) PlaySound(m_sndMoveCheck);
                             }
                             else if (res == Board::MoveResult::Castle)
                             {
-                                PlaySound(m_sndCastle);
+                                if (m_audioEnabled) PlaySound(m_sndCastle);
                             }
                             else if (res == Board::MoveResult::Capture)
                             {
-                                PlaySound(m_sndCapture);
+                                if (m_audioEnabled) PlaySound(m_sndCapture);
                             }
                             else if (res == Board::MoveResult::Promotion)
                             {
@@ -315,7 +347,7 @@ void GameController::update()
                             }
                             else
                             {
-                                PlaySound(m_sndMoveSelf);
+                                if (m_audioEnabled) PlaySound(m_sndMoveSelf);
                             }
 
                             if (res != Board::MoveResult::Promotion)
@@ -386,15 +418,15 @@ void GameController::update()
             {
                 if (res == Board::MoveResult::Check)
                 {
-                    PlaySound(m_sndMoveCheck);
+                    if (m_audioEnabled) PlaySound(m_sndMoveCheck);
                 }
                 else if (res == Board::MoveResult::Castle)
                 {
-                    PlaySound(m_sndCastle);
+                    if (m_audioEnabled) PlaySound(m_sndCastle);
                 }
                 else if (res == Board::MoveResult::Capture)
                 {
-                    PlaySound(m_sndCapture);
+                    if (m_audioEnabled) PlaySound(m_sndCapture);
                 }
                 else if (res == Board::MoveResult::Promotion)
                 {
@@ -410,12 +442,12 @@ void GameController::update()
                         case 'n': chosenType = PieceType::Knight; break;
                         }
                         m_board.completePromotion(chosenType);
-                        PlaySound(m_sndPromote);
+                        if (m_audioEnabled) PlaySound(m_sndPromote);
                     }
                 }
                 else
                 {
-                    PlaySound(m_sndMoveSelf);
+                    if (m_audioEnabled) PlaySound(m_sndMoveSelf);
                 }
 
                 if (res != Board::MoveResult::Promotion)

@@ -25,10 +25,20 @@ int main()
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Chess - Rendering Foundation");
 
     // Set working directory to assets folder if available
-    SearchAndSetResourceDir("resources");
+    if (!SearchAndSetResourceDir("resources"))
+    {
+        std::cerr << "Error: resource directory 'resources' not found. Aborting.\n";
+        CloseWindow();
+        return 1;
+    }
 
     Renderer renderer(WINDOW_WIDTH, WINDOW_HEIGHT, TILE_SIZE);
-    renderer.loadTextures();
+    if (!renderer.loadTextures())
+    {
+        std::cerr << "Error: failed to load required textures/fonts. Aborting.\n";
+        CloseWindow();
+        return 1;
+    }
     renderer.setTheme(Renderer::BoardTheme::Grass);
 
     // Simple theme index for cycling UI (0=Classic,1=Wood,2=Ocean,3=Grass)

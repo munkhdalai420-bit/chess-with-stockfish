@@ -153,7 +153,8 @@ bool Renderer::loadTextures()
     // Iterate piece types and colors directly and load textures immediately.
     const std::vector<char> typeChars = {'k','q','r','b','n','p'}; // piece letters
     const std::vector<char> colors = {'l','d'}; // l = light (white), d = dark (black)
-
+    m_textures.clear();
+    std::vector<std::string> missingFiles;
     for (char t : typeChars)
     {
         for (char c : colors)
@@ -165,22 +166,28 @@ bool Renderer::loadTextures()
 
             // Construct filename relative to the resource directory set by main.
             // Format: "Chess_<piece><color>t45.png" (e.g. "Chess_klt45.png").
-            std::string filename = "Chess_";
-            filename.push_back(t);
-            filename.push_back(c);
-            filename += "t45.png";
+            std::string filename = textureFilenameForKey(key);
 
             // Load immediately from the resource directory (SearchAndSetResourceDir in main)
             Texture2D tex = LoadTexture(filename.c_str());
             if (tex.id == 0)
             {
-                // Loading failed, print warning and skip storing this texture.
+                // Loading failed
                 std::printf("Warning: failed to load texture '%s'\n", filename.c_str());
+                missingFiles.push_back(filename);
                 continue;
             }
 
             m_textures.emplace(key, tex);
         }
+    }
+
+    const size_t expectedCount = typeChars.size() * colors.size();
+    if (m_textures.size() != expectedCount)
+    {
+        std::printf("Error: %zu texture(s) failed to load. Required piece textures are missing.\n", missingFiles.size());
+        for (const auto &f : missingFiles) std::printf("  Missing: %s\n", f.c_str());
+        return false;
     }
 
     return true;
@@ -597,7 +604,7 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
     }
 
     const Color highlightColor = {0, 255, 0, 100};
-    const Color danger = { 255, 0, 0, 80 };
+    const Color danger = { 255, 0, 0, 150 };
 
 
     // Draw tiles
@@ -618,11 +625,14 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
                     DrawRectangle(x, y, m_tileSize, m_tileSize, highlightColor);
                 }
             }
+        }
+    }
 
-    // If current player is in check, highlight their king's tile
+    // If current player is in check, highlight their king's tile.
+    // This is intentionally done once per frame (not per-tile) for performance.
     if (board.isInCheck(board.getCurrentTurn()))
     {
-        // Find king position
+        // Find king position (single scan)
         int kr = -1, kc = -1;
         for (int r = 0; r < Board::Tiles; ++r)
         {
@@ -631,7 +641,8 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
                 const Piece* p = board.at(r, c);
                 if (p && p->type() == PieceType::King && p->color() == board.getCurrentTurn())
                 {
-                    kr = r; kc = c; break;
+                    kr = r; kc = c;
+                    break;
                 }
             }
             if (kr != -1) break;
@@ -640,8 +651,6 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
         if (kr != -1)
         {
             DrawRectangle(tileLeft(kc), tileTop(kr), m_tileSize, m_tileSize, danger);
-        }
-    }
         }
     }
 

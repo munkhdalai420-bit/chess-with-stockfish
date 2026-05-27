@@ -38,7 +38,7 @@ private:
     int m_boardOriginY;
     int m_sidebarWidth = 300;
 
-    std::unordered_map<std::string, Texture2D> m_textures; // key like "k_l" => texture
+    std::unordered_map<std::string, Texture2D> m_textures; // key like "kl" => texture (e.g. "kl" == white king)
     Font m_mainFont; // custom font used for UI text (loaded at runtime)
     BoardTheme m_theme = BoardTheme::Ocean;
     int m_themeIndex = 2; // 0=Grass,1=Wood,2=Ocean,3=Classic (default Ocean)

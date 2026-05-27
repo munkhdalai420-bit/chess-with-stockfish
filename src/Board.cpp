@@ -428,13 +428,13 @@ bool Board::loadFromFEN(const std::string& fen)
 
 bool Board::hasLegalMoves(PieceColor color) const
 {
-    // NOTE: this function previously simulated moves by mutating the board; with undo/redo
-    // machinery available, we can attempt real moves and undo them. However this member
-    // needs to mutate the board during simulation, so it cannot be const. For safety,
-    // callers should invoke the non-const version. This const wrapper simply casts away
-    // const and delegates to the non-const implementation.
-    Board& self = const_cast<Board&>(*this);
-    return self.hasLegalMoves(color);
+    // Create a temporary Board initialized from the current FEN and perform
+    // the non-const simulation on that copy. This avoids mutating the const
+    // object while remaining reasonably fast (FEN round-trip is lightweight).
+    Board tmp;
+    // If FEN round-trip fails for any reason, conservatively report no legal moves.
+    if (!tmp.loadFromFEN(this->getFEN())) return false;
+    return tmp.hasLegalMoves(color);
 }
 
 bool Board::hasLegalMoves(PieceColor color)
