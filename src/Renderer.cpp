@@ -6,6 +6,7 @@
 #include <vector>
 #include <sstream>
 #include "GameController.h"
+#include <cmath>
 
 static std::vector<std::string> wrapText(const std::string &text, int maxWidth, int fontSize, const Font &font)
 {
@@ -64,6 +65,29 @@ Renderer::Renderer(int windowWidth, int windowHeight, int tileSize)
 void Renderer::setTheme(BoardTheme theme)
 {
     m_theme = theme;
+    // keep index in sync
+    switch (m_theme)
+    {
+        case BoardTheme::Grass: m_themeIndex = 0; break;
+        case BoardTheme::Wood: m_themeIndex = 1; break;
+        case BoardTheme::Ocean: m_themeIndex = 2; break;
+        case BoardTheme::Classic: m_themeIndex = 3; break;
+        case BoardTheme::Disco: m_themeIndex = 4; break;
+        default: m_themeIndex = 2; break;
+    }
+}
+
+void Renderer::cycleTheme()
+{
+    m_themeIndex = (m_themeIndex + 1) % 5;
+    switch (m_themeIndex)
+    {
+        case 0: setTheme(BoardTheme::Grass); break;
+        case 1: setTheme(BoardTheme::Wood); break;
+        case 2: setTheme(BoardTheme::Ocean); break;
+        case 3: setTheme(BoardTheme::Classic); break;
+        case 4: setTheme(BoardTheme::Disco); break;
+    }
 }
 
 int Renderer::tileLeft(int col) const
@@ -162,8 +186,9 @@ bool Renderer::loadTextures()
     return true;
 }
 
-void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller) const
+void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller)
 {
+    // If Disco mode is active, we let drawBoard pick colors dynamically based on time.
     drawBoard(board, selected);
 
     // Move hint overlays: show legal destinations for the currently selected piece
@@ -211,6 +236,48 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     }
 
     drawPieces(board);
+
+    // Evaluation bar to the left of the board: white fills from bottom, black from top.
+    {
+        const int BAR_W = 24;
+        const int BAR_PAD = 8;
+        int barH = m_boardPixelSize;
+        int barX = m_boardOriginX - BAR_W - BAR_PAD;
+        if (barX < 8) barX = 8; // keep inside window
+        int barY = m_boardOriginY;
+
+        // Determine filled fraction for White (0.0..1.0) using a sigmoid mapping
+        float whiteFrac = 0.5f;
+        if (controller.isMateDetected())
+        {
+            int mate = controller.getMateInMoves();
+            if (mate > 0) whiteFrac = 1.0f; // white mates -> full white
+            else if (mate < 0) whiteFrac = 0.0f; // black mates -> full black
+        }
+        else
+        {
+            // evaluation is in pawns (e.g., +1.5 == 150 centipawns)
+            double eval = (double)evaluation;
+            const double SCALE = 2.0; // controls sensitivity
+            double x = eval / SCALE;
+            double s = 1.0 / (1.0 + std::exp(-x));
+            // make small advantages visible but avoid fully saturating
+            if (s < 0.01) s = 0.01;
+            if (s > 0.99) s = 0.99;
+            whiteFrac = (float)s;
+        }
+
+        int whiteH = (int)std::round(whiteFrac * (double)barH);
+
+        // Draw background (black) then white overlay for the bottom portion
+        DrawRectangle(barX, barY, BAR_W, barH, BLACK);
+        if (whiteH > 0)
+        {
+            DrawRectangle(barX, barY + (barH - whiteH), BAR_W, whiteH, WHITE);
+        }
+        // Border
+        DrawRectangleLines(barX, barY, BAR_W, barH, Fade(WHITE, 0.12f));
+    }
     // Draw move history sidebar on the right
     const int panelX = m_windowWidth - m_sidebarWidth;
     const int panelY = 0;
@@ -221,12 +288,144 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     const Color panelBg = { 30, 30, 30, 220 };
     DrawRectangle(panelX, panelY, panelW, panelH, panelBg);
 
-    // Title
     const int titleFont = 24;
     const int bodyFont = 20; // monospaced not available, use custom font
     const int padding = 12;
     const Color textCol = { 220, 220, 220, 255 };
-    DrawTextEx(m_mainFont, "Move History", { (float)(panelX + padding), (float)(panelY + padding) }, (float)titleFont, 0.0f, textCol);
+
+    // Draw status (White's Turn / Black's Turn) at the top of the sidebar
+    const int STATUS_FONT_SIZE = 22;
+    const Color statusColor = WHITE;
+    Board::GameState gs = board.getGameState();
+    std::string status;
+    if (gs == Board::GameState::Active)
+    {
+        status = (board.getCurrentTurn() == PieceColor::White) ? "White's Turn" : "Black's Turn";
+        if (board.isInCheck(board.getCurrentTurn())) status += " - CHECK!";
+    }
+    else if (gs == Board::GameState::Checkmate)
+    {
+        PieceColor winner = (board.getCurrentTurn() == PieceColor::White) ? PieceColor::Black : PieceColor::White;
+        status = "CHECKMATE - ";
+        status += (winner == PieceColor::White) ? "White Wins!" : "Black Wins!";
+    }
+    else
+    {
+        status = "Stalemate - Draw";
+    }
+
+    int sw = (int)MeasureTextEx(m_mainFont, status.c_str(), (float)STATUS_FONT_SIZE, 0.0f).x;
+    int sx = panelX + (panelW - sw) / 2;
+    int sy = panelY + padding;
+    DrawTextEx(m_mainFont, status.c_str(), { (float)sx, (float)sy }, (float)STATUS_FONT_SIZE, 0.0f, statusColor);
+
+    // Controls area directly under the status
+    const float CTRL_Y = (float)(sy + STATUS_FONT_SIZE + 8);
+    const float ctrlPad = 8.0f;
+    const float ctrlW = (float)(panelW - padding * 2);
+    const float ctrlH = 36.0f;
+    const float ctrlX = (float)(panelX + padding);
+
+    // Elo selection button (left) and primary buttons row
+    Rectangle eloRect = { ctrlX, CTRL_Y, ctrlW, ctrlH };
+    const int ELO_FONT = 20;
+
+    if (!controller.isMatchStarted())
+    {
+        Vector2 mousePos = GetMousePosition();
+        bool hoverElo = CheckCollisionPointRec(mousePos, eloRect);
+        DrawRectangleRec(eloRect, hoverElo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f));
+        std::string eloText = std::string("AI Difficulty: ") + std::to_string(controller.getTargetElo()) + " Elo";
+        DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && hoverElo)
+        {
+            controller.cycleTargetElo();
+        }
+
+        // Buttons row: UNDO | REDO | START MATCH | END MATCH (start enabled, others disabled visually)
+        const float ROW_Y = CTRL_Y + ctrlH + ctrlPad;
+        const float SP = 8.0f;
+        const float btnW = (ctrlW - SP * 3) / 4.0f;
+        Rectangle undoRect = { ctrlX, ROW_Y, btnW, ctrlH };
+        Rectangle redoRect = { ctrlX + (btnW + SP), ROW_Y, btnW, ctrlH };
+        Rectangle startRect = { ctrlX + 2 * (btnW + SP), ROW_Y, btnW, ctrlH };
+        Rectangle endRect = { ctrlX + 3 * (btnW + SP), ROW_Y, btnW, ctrlH };
+
+        bool canUndo = controller.canUndo();
+        bool canRedo = controller.canRedo();
+        bool hoverUndo = canUndo && CheckCollisionPointRec(mousePos, undoRect);
+        bool hoverRedo = canRedo && CheckCollisionPointRec(mousePos, redoRect);
+        bool hoverStart = CheckCollisionPointRec(mousePos, startRect);
+        bool hoverEnd = CheckCollisionPointRec(mousePos, endRect);
+
+        DrawRectangleRec(undoRect, canUndo ? (hoverUndo ? Fade(GRAY, 0.6f) : Fade(GRAY, 0.3f)) : Fade(GRAY, 0.15f));
+        DrawTextEx(m_mainFont, "UNDO", { undoRect.x + 8, undoRect.y + 6 }, (float)ELO_FONT, 0.0f, canUndo ? Fade(WHITE, 0.6f) : Fade(WHITE, 0.3f));
+
+        DrawRectangleRec(redoRect, canRedo ? (hoverRedo ? Fade(GRAY, 0.6f) : Fade(GRAY, 0.3f)) : Fade(GRAY, 0.15f));
+        DrawTextEx(m_mainFont, "REDO", { redoRect.x + 8, redoRect.y + 6 }, (float)ELO_FONT, 0.0f, canRedo ? Fade(WHITE, 0.6f) : Fade(WHITE, 0.3f));
+
+        DrawRectangleRec(startRect, hoverStart ? Fade(RED, 0.9f) : RED);
+        DrawTextEx(m_mainFont, "START", { startRect.x + 8, startRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
+
+        DrawRectangleRec(endRect, hoverEnd ? Fade(GRAY, 0.6f) : Fade(GRAY, 0.3f));
+        DrawTextEx(m_mainFont, "END", { endRect.x + 8, endRect.y + 6 }, (float)ELO_FONT, 0.0f, Fade(WHITE, 0.6f));
+
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+        {
+            if (hoverStart) controller.startMatch();
+            else if (hoverUndo && canUndo) controller.undo();
+            else if (hoverRedo && canRedo) controller.redo();
+            else if (hoverEnd) controller.endMatch();
+        }
+    }
+    else
+    {
+        // Match active: Elo disabled (faded)
+        Vector2 mousePos = GetMousePosition();
+        bool hoverElo = CheckCollisionPointRec(mousePos, eloRect);
+        DrawRectangleRec(eloRect, hoverElo ? Fade(GRAY, 0.6f) : Fade(GRAY, 0.4f));
+        std::string eloText = std::string("AI Difficulty: ") + std::to_string(controller.getTargetElo()) + " Elo";
+        DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
+
+        // Buttons row: UNDO | REDO | START MATCH | END MATCH
+        const float ROW_Y = CTRL_Y + ctrlH + ctrlPad;
+        const float SP = 8.0f;
+        const float btnW = (ctrlW - SP * 3) / 4.0f;
+        Rectangle undoRect = { ctrlX, ROW_Y, btnW, ctrlH };
+        Rectangle redoRect = { ctrlX + (btnW + SP), ROW_Y, btnW, ctrlH };
+        Rectangle startRect = { ctrlX + 2 * (btnW + SP), ROW_Y, btnW, ctrlH };
+        Rectangle endRect = { ctrlX + 3 * (btnW + SP), ROW_Y, btnW, ctrlH };
+
+        bool canUndo = controller.canUndo();
+        bool canRedo = controller.canRedo();
+        bool hoverUndo = canUndo && CheckCollisionPointRec(mousePos, undoRect);
+        bool hoverRedo = canRedo && CheckCollisionPointRec(mousePos, redoRect);
+        bool hoverStart = CheckCollisionPointRec(mousePos, startRect);
+        bool hoverEnd = CheckCollisionPointRec(mousePos, endRect);
+
+        DrawRectangleRec(undoRect, canUndo ? (hoverUndo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.3f));
+        DrawTextEx(m_mainFont, "UNDO", { undoRect.x + 8, undoRect.y + 6 }, (float)ELO_FONT, 0.0f, canUndo ? WHITE : Fade(WHITE, 0.6f));
+
+        DrawRectangleRec(redoRect, canRedo ? (hoverRedo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.3f));
+        DrawTextEx(m_mainFont, "REDO", { redoRect.x + 8, redoRect.y + 6 }, (float)ELO_FONT, 0.0f, canRedo ? WHITE : Fade(WHITE, 0.6f));
+
+        DrawRectangleRec(startRect, hoverStart ? Fade(GRAY, 0.5f) : Fade(GRAY, 0.3f));
+        DrawTextEx(m_mainFont, "START", { startRect.x + 8, startRect.y + 6 }, (float)ELO_FONT, 0.0f, Fade(WHITE, 0.6f));
+
+        DrawRectangleRec(endRect, hoverEnd ? Fade(RED, 0.9f) : RED);
+        DrawTextEx(m_mainFont, "END", { endRect.x + 8, endRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
+
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+        {
+            if (hoverUndo && canUndo) controller.undo();
+            else if (hoverRedo && canRedo) controller.redo();
+            else if (hoverStart) controller.startMatch();
+            else if (hoverEnd) controller.endMatch();
+        }
+    }
+
+    // Move History title and PGN listing under controls
+    DrawTextEx(m_mainFont, "Move History", { (float)(panelX + padding), (float)(CTRL_Y + ctrlH * 2 + 2 * ctrlPad) }, (float)titleFont, 0.0f, textCol);
 
     // PGN text
     std::string pgn = board.getFullPGNText();
@@ -234,107 +433,49 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     std::vector<std::string> lines = wrapText(pgn, innerW, bodyFont, m_mainFont);
 
     int titleH = (int)MeasureTextEx(m_mainFont, "Move History", (float)titleFont, 0.0f).y;
-    int availableH = panelH - (padding * 3 + titleH);
+    int headerArea = (int)(CTRL_Y + ctrlH * 2 + 2 * ctrlPad + titleH + padding);
+    int availableH = panelH - headerArea - (padding + 48); // leave space for theme controls at bottom
     int lineH = bodyFont + 6;
     int totalH = (int)lines.size() * lineH;
 
     int startY;
     if (totalH > availableH)
     {
-        // pin to bottom
-        startY = panelY + padding + titleH + padding + (availableH - totalH);
+        // pin to top of history area (allow scrolling later)
+        startY = panelY + headerArea;
     }
     else
     {
-        startY = panelY + padding + titleH + padding;
+        startY = panelY + headerArea;
     }
 
-    // Draw lines
+    // Draw lines (clip to the area above theme button)
     for (size_t i = 0; i < lines.size(); ++i)
     {
         int y = startY + (int)i * lineH;
-        if (y + lineH > panelY + panelH - padding) break; // clip
+        if (y + lineH > panelY + panelH - padding - 64) break; // clip before bottom controls
         DrawTextEx(m_mainFont, lines[i].c_str(), { (float)(panelX + padding), (float)y }, (float)bodyFont, 0.0f, textCol);
     }
-    // Draw status text (turn, check, checkmate)
-    // Keep this after pieces so it appears on top
-    // Implemented below as inline here to keep file-local
-    const int STATUS_FONT_SIZE = 22;
-    const Color statusColor = WHITE;
 
-    // Determine game state and text
-    Board::GameState gs = board.getGameState();
-    std::string status;
-    if (gs == Board::GameState::Active)
+    // Theme button at bottom of sidebar (moved from main.cpp)
     {
-        status = (board.getCurrentTurn() == PieceColor::White) ? "White's Turn" : "Black's Turn";
-        if (board.isInCheck(board.getCurrentTurn()))
+        const int panelX_int = panelX;
+        const int padding_int = padding;
+        const float boxW = 160.0f;
+        const float boxH = 28.0f;
+        float themeX = (float)(panelX_int + padding_int);
+        float themeY = (float)(m_windowHeight - padding_int - (int)boxH - 8); // bottom of sidebar
+        Rectangle themeRect = { themeX, themeY, boxW, boxH };
+        Vector2 mp = GetMousePosition();
+        bool hover = CheckCollisionPointRec(mp, themeRect);
+        // theme button always interactable
+        DrawRectangleRec(themeRect, hover ? Fade(GRAY, 0.6f) : Fade(GRAY, 0.5f));
+        const char* themeNames[5] = { "Grass", "Wood", "Ocean", "Classic", "Disco" };
+        DrawTextEx(m_mainFont, themeNames[m_themeIndex], Vector2{ themeRect.x + 8, themeRect.y + 6 }, 18.0f, 0.0f, WHITE);
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && hover)
         {
-            status += " - CHECK!";
+            cycleTheme();
         }
-    }
-    else if (gs == Board::GameState::Checkmate)
-    {
-        // The current turn has no legal moves and is in check => they lost
-        PieceColor winner = (board.getCurrentTurn() == PieceColor::White) ? PieceColor::Black : PieceColor::White;
-        status = "CHECKMATE - ";
-        status += (winner == PieceColor::White) ? "White Wins!" : "Black Wins!";
-    }
-    else // Stalemate
-    {
-        status = "Stalemate - Draw";
-    }
-
-    int sw = (int)MeasureTextEx(m_mainFont, status.c_str(), (float)STATUS_FONT_SIZE, 0.0f).x;
-    int sx = (panelW - sw) / 2;
-    int sy = 8;
-    DrawTextEx(m_mainFont, status.c_str(), { (float)sx, (float)sy }, (float)STATUS_FONT_SIZE, 0.0f, statusColor);
-
-    // Elo selection and start-match UI in the sidebar
-    const int ELO_FONT = 20;
-    const float boxW = 220.0f;
-    const float boxH = 36.0f;
-    const float eloX = (float)(panelX + padding);
-    // place above the theme control located near bottom of sidebar
-    const float eloY = (float)(m_windowHeight - padding - boxH - 8 - (boxH + 12));
-    Rectangle eloRect = { eloX, eloY, boxW, boxH };
-
-    if (!controller.isMatchStarted())
-    {
-        // Active button
-        DrawRectangleRec(eloRect, Fade(GRAY, 0.6f));
-        std::string eloText = std::string("AI Difficulty: ") + std::to_string(controller.getTargetElo()) + " Elo";
-        DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
-
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-        {
-            Vector2 mp = GetMousePosition();
-            if (CheckCollisionPointRec(mp, eloRect))
-            {
-                controller.cycleTargetElo();
-            }
-        }
-
-        // Start match button directly beneath
-        Rectangle startRect = { eloX, eloY + boxH + 8, boxW, boxH };
-        DrawRectangleRec(startRect, RED);
-        DrawTextEx(m_mainFont, "START MATCH", { startRect.x + 12, startRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-        {
-            Vector2 mp = GetMousePosition();
-            if (CheckCollisionPointRec(mp, startRect))
-            {
-                controller.startMatch();
-            }
-        }
-    }
-    else
-    {
-        // In-match: show disabled/faded difficulty button and do not accept clicks
-        DrawRectangleRec(eloRect, Fade(GRAY, 0.4f));
-        std::string eloText = std::string("AI Difficulty: ") + std::to_string(controller.getTargetElo()) + " Elo";
-        DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
-        // START MATCH hidden while match is active
     }
 
     // Game over overlay (checkmate or stalemate)
@@ -406,7 +547,23 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
     // Select colors based on the currently selected theme
     Color lightColor;
     Color darkColor;
-    switch (m_theme)
+    // If Disco mode, cycle through the four base themes over time
+    BoardTheme themeToUse = m_theme;
+    if (m_theme == BoardTheme::Disco)
+    {
+        double t = GetTime(); // seconds since InitWindow
+        const double INTERVAL = 0.1; // seconds per theme
+        int idx = ((int)(t / INTERVAL)) % 4;
+        switch (idx)
+        {
+            case 0: themeToUse = BoardTheme::Grass; break;
+            case 1: themeToUse = BoardTheme::Wood; break;
+            case 2: themeToUse = BoardTheme::Ocean; break;
+            case 3: themeToUse = BoardTheme::Classic; break;
+        }
+    }
+
+    switch (themeToUse)
     {
         case BoardTheme::Ocean:
         {

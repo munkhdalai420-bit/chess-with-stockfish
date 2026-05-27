@@ -32,6 +32,12 @@ public:
     float getEvaluation() const;
     /// Configure engine strength via UCI Elo (enables UCI_LimitStrength)
     void setDifficulty(int elo);
+    /// Clear any cached mate detection state
+    void clearMateDetection();
+    /// Returns true if the engine has reported a forced mate in its info lines
+    bool isMateDetected() const;
+    /// If mate detected, returns mate distance in ply (positive = White mating, negative = Black mating)
+    int getMateInMoves() const;
 
     /// Checks if the engine is currently running
     bool isRunning() const;

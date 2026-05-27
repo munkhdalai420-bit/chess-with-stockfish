@@ -12,7 +12,7 @@ class GameController;
 class Renderer
 {
 public:
-    enum class BoardTheme { Classic, Wood, Ocean, Grass };
+    enum class BoardTheme { Classic, Wood, Ocean, Grass, Disco };
 
     Renderer(int windowWidth, int windowHeight, int tileSize);
     ~Renderer();
@@ -27,7 +27,7 @@ public:
     // Render the board and pieces. 'selected' is an optional board coordinate {row, col}
     // 'evaluation' is a signed value (positive = White advantage) corresponding
     // to the currently displayed history index.
-    void render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller) const;
+    void render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller);
 
 private:
     int m_windowWidth;
@@ -41,12 +41,15 @@ private:
     std::unordered_map<std::string, Texture2D> m_textures; // key like "k_l" => texture
     Font m_mainFont; // custom font used for UI text (loaded at runtime)
     BoardTheme m_theme = BoardTheme::Ocean;
+    int m_themeIndex = 2; // 0=Grass,1=Wood,2=Ocean,3=Classic (default Ocean)
 
     std::string textureFilenameForKey(const std::string& key) const;
     const Texture2D* textureForKey(const std::string& key) const;
 
     void drawBoard(Board& board, const std::optional<std::pair<int,int>>& selected) const;
     void drawPieces(Board& board) const;
+    // Cycle the visual theme (used by UI)
+    void cycleTheme();
     // Helpers
     int tileLeft(int col) const;
     int tileTop(int row) const;

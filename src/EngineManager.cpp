@@ -16,6 +16,22 @@ float EngineManager::getEvaluation() const
     return m_currentEvaluation.load();
 }
 
+bool EngineManager::isMateDetected() const
+{
+    return m_isMateDetected.load();
+}
+
+int EngineManager::getMateInMoves() const
+{
+    return m_mateInMoves.load();
+}
+
+void EngineManager::clearMateDetection()
+{
+    m_isMateDetected.store(false);
+    m_mateInMoves.store(0);
+}
+
 void EngineManager::setDifficulty(int elo)
 {
     if (!m_isRunning) return;

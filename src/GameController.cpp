@@ -55,7 +55,21 @@ void GameController::endMatch()
         m_engine.stopSearch();
         m_aiIsThinking = false;
     }
+    // Exit match mode
     m_gameStarted = false;
+
+    // Reset board and UI state similar to pressing R (return to initial position)
+    m_board = Board();
+    m_board.initializeStandardSetup();
+    m_selected.reset();
+
+    // Reconfigure engine difficulty to current selection and reset evaluation history
+    m_engine.setDifficulty(m_targetElo);
+    m_engine.clearMateDetection();
+    m_evaluationHistory.clear();
+    // Reset displayed evaluation to neutral (half/half)
+    m_evaluationHistory.push_back(0.0f);
+    m_historyIndex = 0;
 }
 GameController::~GameController()
 {
@@ -89,6 +103,22 @@ void GameController::cycleTargetElo()
 
 bool GameController::isMatchStarted() const { return m_gameStarted; }
 
+bool GameController::isMateDetected() const { return m_engine.isMateDetected(); }
+
+int GameController::getMateInMoves() const { return m_engine.getMateInMoves(); }
+
+bool GameController::canUndo() const
+{
+    if (m_aiIsThinking) return false;
+    return m_historyIndex > 0;
+}
+
+bool GameController::canRedo() const
+{
+    if (m_aiIsThinking) return false;
+    return (m_historyIndex + 1) < m_evaluationHistory.size();
+}
+
 void GameController::startMatch()
 {
     // Initialize a fresh board and evaluation history
@@ -98,7 +128,9 @@ void GameController::startMatch()
     m_evaluationHistory.clear();
     // Configure engine difficulty for this match
     m_engine.setDifficulty(m_targetElo);
-    m_evaluationHistory.push_back(m_engine.getEvaluation());
+    m_engine.clearMateDetection();
+    // Start with a neutral evaluation so the bar shows half/half at match start
+    m_evaluationHistory.push_back(0.0f);
     m_historyIndex = 0;
     m_gameStarted = true;
 
@@ -173,22 +205,10 @@ void GameController::update()
         }
     }
 
-    // Also support restart via R key (for convenience)
+    // Also support restart via R key (for convenience) -> start a new match
     if (IsKeyPressed(KEY_R))
     {
-        m_board = Board();
-        m_board.initializeStandardSetup();
-        m_selected.reset();
-        // Reset evaluation history
-        m_evaluationHistory.clear();
-        m_evaluationHistory.push_back(m_engine.getEvaluation());
-        m_historyIndex = 0;
-        // If player is Black, AI should think as White immediately
-        if (m_playerColor == PieceColor::Black)
-        {
-            m_aiIsThinking = true;
-            m_engine.startSearch(m_board.getFEN(), m_timePerMoveMs);
-        }
+        startMatch();
     }
 
     // Promotion handling
@@ -456,6 +476,11 @@ void GameController::update()
                 m_engine.stopSearch();
                 m_aiIsThinking = false;
             }
+            // Reset mate detection and evaluation history so evaluation bar is neutral
+            m_engine.clearMateDetection();
+            m_evaluationHistory.clear();
+            m_evaluationHistory.push_back(0.0f);
+            m_historyIndex = 0;
         }
     }
 }

@@ -54,33 +54,7 @@ int main()
             DrawText(controller.getMoveMessage().c_str(), 10, 40, MSG_FONT, RED);
         }
 
-        // Simple dropdown-like UI at the bottom of the sidebar to cycle board themes
-        const int panelX = WINDOW_WIDTH - SIDEBAR_WIDTH;
-        const int padding = 12;
-        const float boxW = 160.0f;
-        const float boxH = 28.0f;
-        float themeX = (float)(panelX + padding);
-        float themeY = (float)(WINDOW_HEIGHT - padding - (int)boxH - 8); // bottom of sidebar
-        Rectangle themeRect = { themeX, themeY, boxW, boxH };
-        DrawRectangleRec(themeRect, Fade(GRAY, 0.6f));
-        const char* themeNames[4] = { "Grass", "Wood", "Ocean", "Classic" };
-        DrawText(themeNames[themeIndex], (int)themeRect.x + 8, (int)themeRect.y + 6, 18, WHITE);
-
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-        {
-            Vector2 mp = GetMousePosition();
-            if (CheckCollisionPointRec(mp, themeRect))
-            {
-                themeIndex = (themeIndex + 1) % 4;
-                switch (themeIndex)
-                {
-                    case 0: renderer.setTheme(Renderer::BoardTheme::Grass); break;
-                    case 1: renderer.setTheme(Renderer::BoardTheme::Wood); break;
-                    case 2: renderer.setTheme(Renderer::BoardTheme::Ocean); break;
-                    case 3: renderer.setTheme(Renderer::BoardTheme::Classic); break;
-                }
-            }
-        }
+    // Theme button moved to Renderer::render - main.cpp keeps main loop minimal
 
         EndDrawing();
     }

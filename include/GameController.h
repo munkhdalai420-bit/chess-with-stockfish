@@ -31,6 +31,12 @@ public:
 
     // Returns the evaluation corresponding to the currently displayed history index
     float getDisplayedEvaluation() const;
+    bool isMateDetected() const;
+    int getMateInMoves() const;
+
+    // Undo/Redo availability for UI
+    bool canUndo() const;
+    bool canRedo() const;
 
     // Process input and advance game state. Should be called once per frame.
     void update();
