@@ -320,7 +320,7 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
             DrawRectangle(barX, barY + (barH - whiteH), BAR_W, whiteH, WHITE);
         }
         // Border
-        DrawRectangleLines(barX, barY, BAR_W, barH, Fade(WHITE, 0.12f));
+        DrawRectangleLines(barX, barY, BAR_W, barH, WHITE);
     }
     // Draw move history sidebar on the right
     const int panelX = m_windowWidth - m_sidebarWidth;
@@ -374,97 +374,67 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     Rectangle eloRect = { ctrlX, CTRL_Y, ctrlW, ctrlH };
     const int ELO_FONT = 20;
 
-    if (!controller.isMatchStarted())
+    // Unified controls area: Elo selector on top row, then a single row with
+    // three primary buttons arranged as: UNDO  |  LIFECYCLE  |  REDO
     {
         Vector2 mousePos = GetMousePosition();
+        bool matchStarted = controller.isMatchStarted();
+
+        // Elo selector: only interactive when no match is running
         bool hoverElo = CheckCollisionPointRec(mousePos, eloRect);
-        DrawRectangleRec(eloRect, hoverElo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f));
+        DrawRectangleRec(eloRect, hoverElo ? Fade(GRAY, matchStarted ? 0.6f : 0.8f) : Fade(GRAY, matchStarted ? 0.4f : 0.6f));
         std::string eloText = std::string("AI Difficulty: ") + std::to_string(controller.getTargetElo()) + " Elo";
         DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && hoverElo)
+        if (!matchStarted && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && hoverElo)
         {
             controller.cycleTargetElo();
         }
 
-        // Buttons row: UNDO | REDO | START MATCH | END MATCH (start enabled, others disabled visually)
+        // Primary button row (one row): three evenly spaced buttons
         const float ROW_Y = CTRL_Y + ctrlH + ctrlPad;
         const float SP = 8.0f;
-        const float btnW = (ctrlW - SP * 3) / 4.0f;
+        const float btnW = (ctrlW - SP * 2) / 3.0f; // three buttons with two gaps
         Rectangle undoRect = { ctrlX, ROW_Y, btnW, ctrlH };
-        Rectangle redoRect = { ctrlX + (btnW + SP), ROW_Y, btnW, ctrlH };
-        Rectangle startRect = { ctrlX + 2 * (btnW + SP), ROW_Y, btnW, ctrlH };
-        Rectangle endRect = { ctrlX + 3 * (btnW + SP), ROW_Y, btnW, ctrlH };
+        Rectangle lifecycleRect = { ctrlX + (btnW + SP), ROW_Y, btnW, ctrlH };
+        Rectangle redoRect = { ctrlX + 2 * (btnW + SP), ROW_Y, btnW, ctrlH };
 
-        bool canUndo = controller.canUndo();
-        bool canRedo = controller.canRedo();
+        // Undo/Redo are disabled before a match starts or while AI is thinking
+        bool canUndo = matchStarted ? controller.canUndo() : false;
+        bool canRedo = matchStarted ? controller.canRedo() : false;
         bool hoverUndo = canUndo && CheckCollisionPointRec(mousePos, undoRect);
         bool hoverRedo = canRedo && CheckCollisionPointRec(mousePos, redoRect);
-        bool hoverStart = CheckCollisionPointRec(mousePos, startRect);
-        bool hoverEnd = CheckCollisionPointRec(mousePos, endRect);
+        bool hoverLifecycle = CheckCollisionPointRec(mousePos, lifecycleRect);
 
-        DrawRectangleRec(undoRect, canUndo ? (hoverUndo ? Fade(GRAY, 0.6f) : Fade(GRAY, 0.3f)) : Fade(GRAY, 0.15f));
-        DrawTextEx(m_mainFont, "UNDO", { undoRect.x + 8, undoRect.y + 6 }, (float)ELO_FONT, 0.0f, canUndo ? Fade(WHITE, 0.6f) : Fade(WHITE, 0.3f));
+        // Draw Undo
+        if (canUndo)
+            DrawRectangleRec(undoRect, hoverUndo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f));
+        else
+            DrawRectangleRec(undoRect, Fade(GRAY, matchStarted ? 0.3f : 0.15f));
+        DrawTextEx(m_mainFont, "UNDO", { undoRect.x + 8, undoRect.y + 6 }, (float)ELO_FONT, 0.0f, canUndo ? WHITE : Fade(WHITE, 0.3f));
 
-        DrawRectangleRec(redoRect, canRedo ? (hoverRedo ? Fade(GRAY, 0.6f) : Fade(GRAY, 0.3f)) : Fade(GRAY, 0.15f));
-        DrawTextEx(m_mainFont, "REDO", { redoRect.x + 8, redoRect.y + 6 }, (float)ELO_FONT, 0.0f, canRedo ? Fade(WHITE, 0.6f) : Fade(WHITE, 0.3f));
+        // Draw Lifecycle (Start Match / End Match)
+        const char* lifecycleLabel = matchStarted ? "END" : "START";
+        // Emphasize lifecycle button using red background
+        DrawRectangleRec(lifecycleRect, hoverLifecycle ? Fade(RED, 0.9f) : RED);
+        DrawTextEx(m_mainFont, lifecycleLabel, { lifecycleRect.x + 20, lifecycleRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
 
-        DrawRectangleRec(startRect, hoverStart ? Fade(RED, 0.9f) : RED);
-        DrawTextEx(m_mainFont, "START", { startRect.x + 8, startRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
+        // Draw Redo
+        if (canRedo)
+            DrawRectangleRec(redoRect, hoverRedo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f));
+        else
+            DrawRectangleRec(redoRect, Fade(GRAY, matchStarted ? 0.3f : 0.15f));
+        DrawTextEx(m_mainFont, "REDO", { redoRect.x + 8, redoRect.y + 6 }, (float)ELO_FONT, 0.0f, canRedo ? WHITE : Fade(WHITE, 0.3f));
 
-        DrawRectangleRec(endRect, hoverEnd ? Fade(GRAY, 0.6f) : Fade(GRAY, 0.3f));
-        DrawTextEx(m_mainFont, "END", { endRect.x + 8, endRect.y + 6 }, (float)ELO_FONT, 0.0f, Fade(WHITE, 0.6f));
-
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-        {
-            if (hoverStart) controller.startMatch();
-            else if (hoverUndo && canUndo) controller.undo();
-            else if (hoverRedo && canRedo) controller.redo();
-            else if (hoverEnd) controller.endMatch();
-        }
-    }
-    else
-    {
-        // Match active: Elo disabled (faded)
-        Vector2 mousePos = GetMousePosition();
-        bool hoverElo = CheckCollisionPointRec(mousePos, eloRect);
-        DrawRectangleRec(eloRect, hoverElo ? Fade(GRAY, 0.6f) : Fade(GRAY, 0.4f));
-        std::string eloText = std::string("AI Difficulty: ") + std::to_string(controller.getTargetElo()) + " Elo";
-        DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
-
-        // Buttons row: UNDO | REDO | START MATCH | END MATCH
-        const float ROW_Y = CTRL_Y + ctrlH + ctrlPad;
-        const float SP = 8.0f;
-        const float btnW = (ctrlW - SP * 3) / 4.0f;
-        Rectangle undoRect = { ctrlX, ROW_Y, btnW, ctrlH };
-        Rectangle redoRect = { ctrlX + (btnW + SP), ROW_Y, btnW, ctrlH };
-        Rectangle startRect = { ctrlX + 2 * (btnW + SP), ROW_Y, btnW, ctrlH };
-        Rectangle endRect = { ctrlX + 3 * (btnW + SP), ROW_Y, btnW, ctrlH };
-
-        bool canUndo = controller.canUndo();
-        bool canRedo = controller.canRedo();
-        bool hoverUndo = canUndo && CheckCollisionPointRec(mousePos, undoRect);
-        bool hoverRedo = canRedo && CheckCollisionPointRec(mousePos, redoRect);
-        bool hoverStart = CheckCollisionPointRec(mousePos, startRect);
-        bool hoverEnd = CheckCollisionPointRec(mousePos, endRect);
-
-        DrawRectangleRec(undoRect, canUndo ? (hoverUndo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.3f));
-        DrawTextEx(m_mainFont, "UNDO", { undoRect.x + 8, undoRect.y + 6 }, (float)ELO_FONT, 0.0f, canUndo ? WHITE : Fade(WHITE, 0.6f));
-
-        DrawRectangleRec(redoRect, canRedo ? (hoverRedo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.3f));
-        DrawTextEx(m_mainFont, "REDO", { redoRect.x + 8, redoRect.y + 6 }, (float)ELO_FONT, 0.0f, canRedo ? WHITE : Fade(WHITE, 0.6f));
-
-        DrawRectangleRec(startRect, hoverStart ? Fade(GRAY, 0.5f) : Fade(GRAY, 0.3f));
-        DrawTextEx(m_mainFont, "START", { startRect.x + 8, startRect.y + 6 }, (float)ELO_FONT, 0.0f, Fade(WHITE, 0.6f));
-
-        DrawRectangleRec(endRect, hoverEnd ? Fade(RED, 0.9f) : RED);
-        DrawTextEx(m_mainFont, "END", { endRect.x + 8, endRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
-
+        // Click handling: lifecycle button toggles match state; undo/redo map to controller
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
         {
             if (hoverUndo && canUndo) controller.undo();
+            else if (hoverLifecycle)
+            {
+                if (matchStarted) controller.endMatch();
+                else controller.startMatch();
+            }
             else if (hoverRedo && canRedo) controller.redo();
-            else if (hoverStart) controller.startMatch();
-            else if (hoverEnd) controller.endMatch();
         }
     }
 
@@ -620,7 +590,7 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
         float cbY = themeRect.y + (boxH - cbSize) / 2.0f;
         m_animCheckboxBounds = { cbX, cbY, cbSize, cbSize };
         // checkbox background
-        DrawRectangleRec(m_animCheckboxBounds, m_animatePieces ? Fade(WHITE, 0.95f) : Fade(WHITE, 0.15f));
+        DrawRectangleRec(m_animCheckboxBounds, m_animatePieces ? Fade(RED, 0.95f) : Fade(WHITE, 0.15f));
         DrawRectangleLines((int)cbX, (int)cbY, (int)cbSize, (int)cbSize, Fade(WHITE, 0.6f));
         // label
         DrawTextEx(m_mainFont, "Animation", Vector2{ themeRect.x + boxW + 12.0f + cbSize + 8.0f, themeRect.y + 4.0f }, 16.0f, 0.0f, WHITE);
@@ -777,6 +747,8 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
             }
         }
     }
+    DrawRectangleLines(m_boardOriginX, m_boardOriginY, m_tileSize*8, m_tileSize * 8, WHITE);
+
 
     // If current player is in check, highlight their king's tile.
     // This is intentionally done once per frame (not per-tile) for performance.
