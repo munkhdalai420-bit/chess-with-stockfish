@@ -45,7 +45,7 @@ int main()
         BeginDrawing();
         ClearBackground(BLACK);
 
-        renderer.render(controller.getBoard(), controller.getSelected(), controller.getDisplayedEvaluation());
+        renderer.render(controller.getBoard(), controller.getSelected(), controller.getDisplayedEvaluation(), controller);
 
         // Draw temporary move message if present (controller manages the timer)
         if (controller.getMessageTimer() > 0.0f)

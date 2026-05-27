@@ -13,13 +13,21 @@ public:
     GameController(int windowWidth, int windowHeight, int tileSize, int sidebarWidth);
     ~GameController();
 
+    // Elo options and configuration
+    static const int ELO_COUNT = 4;
+    static const int ELO_OPTIONS[ELO_COUNT];
+
+    int getTargetElo() const;
+    void cycleTargetElo();
+
+    bool isMatchStarted() const;
+    void startMatch();
+    void endMatch();
+
     // History navigation
     void undo();
     void redo();
     void goToHistoryIndex(size_t index);
-
-    // Start a new match with the currently selected difficulty
-    void startMatch();
 
     // Returns the evaluation corresponding to the currently displayed history index
     float getDisplayedEvaluation() const;
@@ -40,7 +48,6 @@ private:
 
     bool m_aiIsThinking = false;
     bool m_isReviewingHistory = false;
-    bool m_gameStarted = false;
     std::optional<std::pair<int,int>> m_selected;
 
     // Cached evaluation history per ply (half-move). index 0 == initial position
@@ -48,9 +55,11 @@ private:
     size_t m_historyIndex = 0; // current displayed history index
 
     // Player/AI configuration
-    int m_targetElo = 500; // allowed: 500,1000,1500,2000
+    int m_targetElo = 2000; // allowed: 500,1000,1500,2000
     PieceColor m_playerColor = PieceColor::White;
     int m_timePerMoveMs = 1000;
+    int m_eloIndex = 3; // index into ELO_OPTIONS (default to 2000)
+    bool m_gameStarted = false;
 
     std::string m_moveMessage;
     float m_messageTimer = 0.0f;

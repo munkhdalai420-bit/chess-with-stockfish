@@ -7,6 +7,8 @@
 #include "raylib.h"
 #include "Board.h"
 
+class GameController;
+
 class Renderer
 {
 public:
@@ -25,7 +27,7 @@ public:
     // Render the board and pieces. 'selected' is an optional board coordinate {row, col}
     // 'evaluation' is a signed value (positive = White advantage) corresponding
     // to the currently displayed history index.
-    void render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation) const;
+    void render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller) const;
 
 private:
     int m_windowWidth;

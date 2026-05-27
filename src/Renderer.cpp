@@ -5,6 +5,7 @@
 #include <iostream>
 #include <vector>
 #include <sstream>
+#include "GameController.h"
 
 static std::vector<std::string> wrapText(const std::string &text, int maxWidth, int fontSize, const Font &font)
 {
@@ -161,7 +162,7 @@ bool Renderer::loadTextures()
     return true;
 }
 
-void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation) const
+void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller) const
 {
     drawBoard(board, selected);
 
@@ -288,6 +289,53 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     int sx = (panelW - sw) / 2;
     int sy = 8;
     DrawTextEx(m_mainFont, status.c_str(), { (float)sx, (float)sy }, (float)STATUS_FONT_SIZE, 0.0f, statusColor);
+
+    // Elo selection and start-match UI in the sidebar
+    const int ELO_FONT = 20;
+    const float boxW = 220.0f;
+    const float boxH = 36.0f;
+    const float eloX = (float)(panelX + padding);
+    // place above the theme control located near bottom of sidebar
+    const float eloY = (float)(m_windowHeight - padding - boxH - 8 - (boxH + 12));
+    Rectangle eloRect = { eloX, eloY, boxW, boxH };
+
+    if (!controller.isMatchStarted())
+    {
+        // Active button
+        DrawRectangleRec(eloRect, Fade(GRAY, 0.6f));
+        std::string eloText = std::string("AI Difficulty: ") + std::to_string(controller.getTargetElo()) + " Elo";
+        DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
+
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+        {
+            Vector2 mp = GetMousePosition();
+            if (CheckCollisionPointRec(mp, eloRect))
+            {
+                controller.cycleTargetElo();
+            }
+        }
+
+        // Start match button directly beneath
+        Rectangle startRect = { eloX, eloY + boxH + 8, boxW, boxH };
+        DrawRectangleRec(startRect, RED);
+        DrawTextEx(m_mainFont, "START MATCH", { startRect.x + 12, startRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+        {
+            Vector2 mp = GetMousePosition();
+            if (CheckCollisionPointRec(mp, startRect))
+            {
+                controller.startMatch();
+            }
+        }
+    }
+    else
+    {
+        // In-match: show disabled/faded difficulty button and do not accept clicks
+        DrawRectangleRec(eloRect, Fade(GRAY, 0.4f));
+        std::string eloText = std::string("AI Difficulty: ") + std::to_string(controller.getTargetElo()) + " Elo";
+        DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
+        // START MATCH hidden while match is active
+    }
 
     // Game over overlay (checkmate or stalemate)
     if (gs == Board::GameState::Checkmate || gs == Board::GameState::Stalemate)

@@ -3,6 +3,9 @@
 #include <iostream>
 #include <algorithm>
 
+// Define Elo options
+const int GameController::ELO_OPTIONS[GameController::ELO_COUNT] = { 500, 1000, 1500, 2000 };
+
 GameController::GameController(int windowWidth, int windowHeight, int tileSize, int sidebarWidth)
     : m_windowWidth(windowWidth), m_windowHeight(windowHeight), m_tileSize(tileSize), m_sidebarWidth(sidebarWidth),
       m_sndCapture{}, m_sndCastle{}, m_sndMoveCheck{}, m_sndMoveSelf{}, m_sndPromote{}
@@ -21,15 +24,39 @@ GameController::GameController(int windowWidth, int windowHeight, int tileSize, 
     // Launch engine with default path (EngineManager will use its default if empty)
     m_engine.launch("");
 
+    // Configure engine difficulty
+    m_engine.setDifficulty(m_targetElo);
+
+    // Ensure elo index matches target elo
+    for (int i = 0; i < GameController::ELO_COUNT; ++i)
+    {
+        if (ELO_OPTIONS[i] == m_targetElo) { m_eloIndex = i; break; }
+    }
+
+
+
     // Initialize evaluation history with current engine evaluation (may be 0.0 initially)
     m_evaluationHistory.clear();
     m_evaluationHistory.push_back(m_engine.getEvaluation());
     m_historyIndex = 0;
 
-    // Game will be started via startMatch() when player selects difficulty in lobby
+    // If the human chooses to play Black, have the AI start thinking for White immediately
+    if (m_playerColor == PieceColor::Black)
+    {
+        m_aiIsThinking = true;
+        m_engine.startSearch(m_board.getFEN(), m_timePerMoveMs);
+    }
+}
+void GameController::endMatch()
+{
+    // Abort any running engine search and return to lobby state
+    if (m_aiIsThinking)
+    {
+        m_engine.stopSearch();
+        m_aiIsThinking = false;
+    }
     m_gameStarted = false;
 }
-
 GameController::~GameController()
 {
     // Shutdown engine first
@@ -46,36 +73,41 @@ GameController::~GameController()
     CloseAudioDevice();
 }
 
+Board& GameController::getBoard()
+{
+    return m_board;
+}
+
+int GameController::getTargetElo() const { return m_targetElo; }
+
+void GameController::cycleTargetElo()
+{
+    m_eloIndex = (m_eloIndex + 1) % ELO_COUNT;
+    m_targetElo = ELO_OPTIONS[m_eloIndex];
+    m_engine.setDifficulty(m_targetElo);
+}
+
+bool GameController::isMatchStarted() const { return m_gameStarted; }
+
 void GameController::startMatch()
 {
-    // Configure engine with selected difficulty
-    m_engine.setDifficulty(m_targetElo);
-
-    // Reset board to starting position
+    // Initialize a fresh board and evaluation history
     m_board = Board();
     m_board.initializeStandardSetup();
-
-    // Reset selection and history
     m_selected.reset();
-    m_isReviewingHistory = false;
     m_evaluationHistory.clear();
+    // Configure engine difficulty for this match
+    m_engine.setDifficulty(m_targetElo);
     m_evaluationHistory.push_back(m_engine.getEvaluation());
     m_historyIndex = 0;
-
-    // Mark the game as started
     m_gameStarted = true;
 
-    // If player is Black, AI should think as White immediately
+    // If the human chooses to play Black, have the AI start thinking for White immediately
     if (m_playerColor == PieceColor::Black)
     {
         m_aiIsThinking = true;
         m_engine.startSearch(m_board.getFEN(), m_timePerMoveMs);
     }
-}
-
-Board& GameController::getBoard()
-{
-    return m_board;
 }
 void GameController::undo()
 {
@@ -144,17 +176,19 @@ void GameController::update()
     // Also support restart via R key (for convenience)
     if (IsKeyPressed(KEY_R))
     {
-        // Return to lobby (game not started)
-        m_gameStarted = false;
         m_board = Board();
         m_board.initializeStandardSetup();
         m_selected.reset();
-        m_aiIsThinking = false;
-        m_isReviewingHistory = false;
         // Reset evaluation history
         m_evaluationHistory.clear();
         m_evaluationHistory.push_back(m_engine.getEvaluation());
         m_historyIndex = 0;
+        // If player is Black, AI should think as White immediately
+        if (m_playerColor == PieceColor::Black)
+        {
+            m_aiIsThinking = true;
+            m_engine.startSearch(m_board.getFEN(), m_timePerMoveMs);
+        }
     }
 
     // Promotion handling
@@ -205,7 +239,7 @@ void GameController::update()
             }
         }
     }
-    else if (m_board.getGameState() == Board::GameState::Active && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && m_gameStarted)
+    else if (m_gameStarted && m_board.getGameState() == Board::GameState::Active && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
     {
         Vector2 mp = GetMousePosition();
         int boardPixelSize = m_tileSize * Board::Tiles;
@@ -400,6 +434,7 @@ void GameController::update()
                 m_historyIndex = m_evaluationHistory.size() - 1;
 
                 m_aiIsThinking = false;
+                std::cout << "Evaluation of move: " << eval << std::endl;
         }
     }
 
@@ -408,5 +443,19 @@ void GameController::update()
     {
         m_messageTimer -= GetFrameTime();
         if (m_messageTimer < 0.0f) m_messageTimer = 0.0f;
+    }
+
+    // If the game has reached a terminal state, exit match mode so lobby is available again
+    {
+        Board::GameState gs = m_board.getGameState();
+        if (gs == Board::GameState::Checkmate || gs == Board::GameState::Stalemate)
+        {
+            m_gameStarted = false;
+            if (m_aiIsThinking)
+            {
+                m_engine.stopSearch();
+                m_aiIsThinking = false;
+            }
+        }
     }
 }
