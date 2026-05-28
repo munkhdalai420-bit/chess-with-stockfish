@@ -82,4 +82,8 @@ private:
     // Double-click tracking for move history (timestamp and last clicked line index)
     double m_lastHistoryClickTime = 0.0;
     int m_lastHistoryClickedIndex = -1;
+    // Whether the visual board is flipped (human chose to play Black).
+    // This is updated each frame from Renderer::render(). Marked mutable so const draw helpers
+    // can consult it without breaking const-correctness.
+    mutable bool m_flip = false;
 };

@@ -12,6 +12,9 @@ class Renderer;
 class GameController
 {
 public:
+    // Player side selection (view from the human player's perspective)
+    enum class PlayerColor { White, Black };
+
     GameController(int windowWidth, int windowHeight, int tileSize, int sidebarWidth, Renderer* renderer);
     ~GameController();
 
@@ -78,10 +81,18 @@ private:
 
     // Player/AI configuration
     int m_targetElo = 2000; // allowed: 500,1000,1500,2000
-    PieceColor m_playerColor = PieceColor::White;
+    PlayerColor m_playerColor = PlayerColor::White;
     int m_timePerMoveMs = 1000;
     int m_eloIndex = 3; // index into ELO_OPTIONS (default to 2000)
     bool m_gameStarted = false;
+
+public:
+    // Accessors to allow Renderer/UI to read and toggle the player's chosen side
+    PlayerColor getPlayerColor() const { return m_playerColor; }
+    void setPlayerColor(PlayerColor c) { m_playerColor = c; }
+    void togglePlayerColor() { m_playerColor = (m_playerColor == PlayerColor::White) ? PlayerColor::Black : PlayerColor::White; }
+    // Engine state query for UI: true if engine is currently idle
+    bool isEngineIdle() const { return m_engineMode == EngineMode::Idle; }
 
     std::string m_moveMessage;
     float m_messageTimer = 0.0f;

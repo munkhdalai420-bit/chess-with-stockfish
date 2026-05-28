@@ -71,12 +71,6 @@ GameController::GameController(int windowWidth, int windowHeight, int tileSize, 
     m_evaluationHistory.push_back(m_engine.getEvaluation());
     m_historyIndex = 0;
 
-    // If the human chooses to play Black, have the AI start thinking for White immediately
-    if (m_playerColor == PieceColor::Black)
-    {
-        m_engineMode = EngineMode::AI_Thinking;
-        m_engine.startSearch(m_board.getFEN(), m_timePerMoveMs);
-    }
 }
 void GameController::endMatch()
 {
@@ -169,7 +163,7 @@ void GameController::startMatch()
     m_gameStarted = true;
 
     // If the human chooses to play Black, have the AI start thinking for White immediately
-    if (m_playerColor == PieceColor::Black)
+    if (m_playerColor == PlayerColor::Black)
     {
         m_engineMode = EngineMode::AI_Thinking;
         m_engine.startSearch(m_board.getFEN(), m_timePerMoveMs);
@@ -268,7 +262,11 @@ void GameController::requestHint()
     // Only allow a hint when engine is idle, a match is running, and it's the human's turn
     if (m_engineMode != EngineMode::Idle) return;
     if (!m_gameStarted) return;
-    if (m_board.getCurrentTurn() != m_playerColor) return; // it's AI's turn
+    // Map PlayerColor to PieceColor for comparison with board state
+    {
+        PieceColor humanPieceColor = (m_playerColor == PlayerColor::White) ? PieceColor::White : PieceColor::Black;
+        if (m_board.getCurrentTurn() != humanPieceColor) return; // it's AI's turn
+    }
 
     m_engineMode = EngineMode::Hint_Calculating;
     m_hintMove.clear();
@@ -290,7 +288,8 @@ void GameController::clearActiveHint()
 
 bool GameController::canRequestHint() const
 {
-    return (m_engineMode == EngineMode::Idle) && m_gameStarted && (m_board.getCurrentTurn() == m_playerColor);
+    PieceColor humanPieceColor = (m_playerColor == PlayerColor::White) ? PieceColor::White : PieceColor::Black;
+    return (m_engineMode == EngineMode::Idle) && m_gameStarted && (m_board.getCurrentTurn() == humanPieceColor);
 }
 
 std::string GameController::getHintMove() const
@@ -392,10 +391,18 @@ void GameController::update()
 
         if (localX >= 0 && localY >= 0 && localX < boardPixelSize && localY < boardPixelSize)
         {
-            if (m_board.getCurrentTurn() == PieceColor::White)
+            // Only allow human input when it's the human's turn (map PlayerColor -> PieceColor)
+            PieceColor humanPieceColor = (m_playerColor == PlayerColor::White) ? PieceColor::White : PieceColor::Black;
+            if (m_board.getCurrentTurn() == humanPieceColor)
             {
                 int col = (int)(localX / m_tileSize);
                 int row = (int)(localY / m_tileSize);
+                // If the human chose Black, flip coordinates to match rotated board view
+                if (m_playerColor == PlayerColor::Black)
+                {
+                    col = Board::Tiles - 1 - col;
+                    row = Board::Tiles - 1 - row;
+                }
 
                 if (!m_selected.has_value())
                 {
@@ -516,15 +523,24 @@ void GameController::update()
         }
     }
 
-    // AI trigger: start engine search for AI move when idle and opponent to move
-    if (m_board.getGameState() == Board::GameState::Active &&
-        m_engineMode == EngineMode::Idle &&
-        !m_isReviewingHistory &&
-        m_board.getCurrentTurn() == PieceColor::Black)
+    // AI trigger: only consider starting AI when a match is running and the engine is idle.
+    // Strict guard prevents AI from being triggered by stray state changes in the lobby.
+    if (!m_gameStarted || m_engineMode != EngineMode::Idle)
     {
-        m_engineMode = EngineMode::AI_Thinking;
-        std::string currentFen = m_board.getFEN();
-        m_engine.startSearch(currentFen, 1000);
+        // Do nothing: AI must not be started when no game is active or engine already busy
+    }
+    else
+    {
+        // Existing logic: start engine search for AI move when it's the opponent's turn
+        if (m_board.getGameState() == Board::GameState::Active &&
+            !m_isReviewingHistory &&
+            // If it's not the human's piece color, let the engine think
+            (m_board.getCurrentTurn() != ((m_playerColor == PlayerColor::White) ? PieceColor::White : PieceColor::Black)))
+        {
+            m_engineMode = EngineMode::AI_Thinking;
+            std::string currentFen = m_board.getFEN();
+            m_engine.startSearch(currentFen, 1000);
+        }
     }
 
     // AI polling: when engine is thinking for an AI move, check for bestmove
@@ -546,8 +562,6 @@ void GameController::update()
 
             if (res != Board::MoveResult::Invalid)
             {
-                // Clear any active hint immediately when the AI move is applied
-                clearActiveHint();
                 if (res == Board::MoveResult::Check)
                 {
                     if (m_audioEnabled) PlaySound(m_sndMoveCheck);

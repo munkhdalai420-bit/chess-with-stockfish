@@ -113,17 +113,19 @@ void Renderer::cycleTheme()
 
 int Renderer::tileLeft(int col) const
 {
-    return m_boardOriginX + col * m_tileSize; // no-op adjustment
+    int screenCol = m_flip ? (Board::Tiles - 1 - col) : col;
+    return m_boardOriginX + screenCol * m_tileSize;
 }
 
 int Renderer::tileTop(int row) const
 {
-    return m_boardOriginY + row * m_tileSize; // no-op adjustment
+    int screenRow = m_flip ? (Board::Tiles - 1 - row) : row;
+    return m_boardOriginY + screenRow * m_tileSize;
 }
 
 Rectangle Renderer::tileRect(int row, int col) const
 {
-    return Rectangle{ (float)tileLeft(col), (float)tileTop(row), (float)m_tileSize, (float)m_tileSize }; // no-op adjustment
+    return Rectangle{ (float)tileLeft(col), (float)tileTop(row), (float)m_tileSize, (float)m_tileSize };
 }
 
 Renderer::~Renderer()
@@ -216,6 +218,9 @@ bool Renderer::loadTextures()
 
 void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller)
 {
+    // Update flip state from controller (true when human chose Black)
+    m_flip = (controller.getPlayerColor() == GameController::PlayerColor::Black);
+
     // Update animation progress (if active)
     const float ANIM_DURATION = 0.14f; // seconds for a single piece move
     if (m_currentAnim.isActive)
@@ -320,11 +325,25 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
 
         int whiteH = (int)std::round(whiteFrac * (double)barH);
 
-        // Draw background (black) then white overlay for the bottom portion
-        DrawRectangle(barX, barY, BAR_W, barH, BLACK);
-        if (whiteH > 0)
+        // Draw evaluation bar. When not flipped, white fills from bottom; when flipped, black fills from bottom.
+        if (!m_flip)
         {
-            DrawRectangle(barX, barY + (barH - whiteH), BAR_W, whiteH, WHITE);
+            // Standard: background black, white fills from bottom up
+            DrawRectangle(barX, barY, BAR_W, barH, BLACK);
+            if (whiteH > 0)
+            {
+                DrawRectangle(barX, barY + (barH - whiteH), BAR_W, whiteH, WHITE);
+            }
+        }
+        else
+        {
+            // Flipped perspective: background white, black fills from bottom up
+            int blackH = barH - whiteH;
+            DrawRectangle(barX, barY, BAR_W, barH, WHITE);
+            if (blackH > 0)
+            {
+                DrawRectangle(barX, barY + (barH - blackH), BAR_W, blackH, BLACK);
+            }
         }
         // Border
         //DrawRectangleLines(barX, barY, BAR_W, barH, WHITE);
@@ -379,24 +398,59 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     const float ctrlH = 36.0f;
     const float ctrlX = (float)(panelX + padding);
 
-    // Elo selection button (left) and primary buttons row
-    Rectangle eloRect = { ctrlX, CTRL_Y, ctrlW, ctrlH };
+    // Elo selection button (left) and Side toggle button (right) share the top control row
     const int ELO_FONT = 20;
 
-    // Unified controls area: Elo selector on top row, then a single row with
-    // three primary buttons arranged as: UNDO  |  LIFECYCLE  |  REDO
+    // Unified controls area: Elo selector occupies left half, Side toggle occupies right half.
     {
         Vector2 mousePos = GetMousePosition();
         bool matchStarted = controller.isMatchStarted();
 
-        // Elo selector: only interactive when no match is running
-        bool hoverElo = CheckCollisionPointRec(mousePos, eloRect);
-        DrawRectangleRec(eloRect, hoverElo ? Fade(GRAY, matchStarted ? 0.6f : 0.8f) : Fade(GRAY, matchStarted ? 0.4f : 0.6f));
-        std::string eloText = std::string("AI Difficulty: ") + std::to_string(controller.getTargetElo()) + " Elo";
-        DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
-        if (!matchStarted && IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && hoverElo)
+        const float midGap = 8.0f;
+        float btnW = (ctrlW - midGap) * 0.5f;
+        Rectangle eloRect = { ctrlX, CTRL_Y, btnW, ctrlH };
+        Rectangle sideRect = { ctrlX + btnW + midGap, CTRL_Y, btnW, ctrlH };
+
+        // Elo selector: allow changing only when no match is running
+        bool canChangeDifficulty = !controller.isMatchStarted();
+        if (!canChangeDifficulty)
         {
-            controller.cycleTargetElo();
+            DrawRectangleRec(eloRect, Fade(GRAY, 0.4f));
+            std::string eloText = std::string("ELO: ") + std::to_string(controller.getTargetElo()) + " Elo";
+            DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 6 }, (float)ELO_FONT, 0.0f, Fade(WHITE, 0.6f));
+        }
+        else
+        {
+            bool hoverElo = CheckCollisionPointRec(mousePos, eloRect);
+            DrawRectangleRec(eloRect, hoverElo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f));
+            std::string eloText = std::string("ELO: ") + std::to_string(controller.getTargetElo()) + " Elo";
+            DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && hoverElo)
+            {
+                controller.cycleTargetElo();
+            }
+        }
+
+        // Side toggle button: shows chosen side. Interactive only pre-game and when engine is idle.
+        GameController::PlayerColor pc = controller.getPlayerColor();
+        const char* sideLabel = (pc == GameController::PlayerColor::White) ? "Side: White" : "Side: Black";
+        bool canSwitch = (!controller.isMatchStarted() && controller.isEngineIdle());
+
+        // Draw faded when switching is not allowed; avoid any mouse checks when disabled so it's physically unclickable
+        if (!canSwitch)
+        {
+            DrawRectangleRec(sideRect, Fade(GRAY, 0.3f));
+            DrawTextEx(m_mainFont, sideLabel, { sideRect.x + 8, sideRect.y + 6 }, (float)ELO_FONT, 0.0f, Fade(WHITE, 0.6f));
+        }
+        else
+        {
+            bool hoverSide = CheckCollisionPointRec(mousePos, sideRect);
+            DrawRectangleRec(sideRect, hoverSide ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f));
+            DrawTextEx(m_mainFont, sideLabel, { sideRect.x + 8, sideRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && hoverSide)
+            {
+                controller.togglePlayerColor();
+            }
         }
 
         // Single horizontal control row with 4 buttons: Undo | Start/End | Redo | Hint
@@ -808,6 +862,7 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
                     int r1 = 8 - (r1c - '0');
                     int c2 = f2 - 'a';
                     int r2 = 8 - (r2c - '0');
+                    // logical coords -> tileLeft/top will map to screen when m_flip is set
                     Color fillCol = Fade(GREEN, 0.25f);
                     Rectangle s1 = { (float)tileLeft(c1), (float)tileTop(r1), (float)m_tileSize, (float)m_tileSize };
                     Rectangle s2 = { (float)tileLeft(c2), (float)tileTop(r2), (float)m_tileSize, (float)m_tileSize };
@@ -865,34 +920,38 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
 
     const char files[] = "abcdefgh";
 
-    // Ranks on leftmost file 'a' (top-left of the tile)
+    // Ranks on leftmost screen file (top-left of the tile when not flipped, top-right when flipped)
+    int leftLogicalCol = m_flip ? (Board::Tiles - 1) : 0;
     for (int r = 0; r < Board::Tiles; ++r)
     {
-        int rank = Board::Tiles - r; // 8..1 from top to bottom
-        std::string rankStr = std::to_string(rank);
+        // Top->bottom: if not flipped, ranks are 8..1; if flipped, ranks are 1..8
+        int rankNum = m_flip ? (r + 1) : (Board::Tiles - r);
+        std::string rankStr = std::to_string(rankNum);
 
-        // Determine tile color for inversion
-        bool isLight = ((r + 0) % 2) == 0; // c == 0 (file a)
+        // Determine tile color at the leftmost screen file for this rank
+        bool isLight = ((r + leftLogicalCol) % 2) == 0;
         const Color textColor = isLight ? darkColor : lightColor;
 
-        int x = tileLeft(0) + PADDING;
+        int textW = (int)MeasureTextEx(m_mainFont, rankStr.c_str(), (float)SMALL_FONT, 0.0f).x;
+        int x = tileLeft(leftLogicalCol) + (m_flip ? (m_tileSize - PADDING - textW) : PADDING);
         int y = tileTop(r) + PADDING;
         DrawTextEx(m_mainFont, rankStr.c_str(), { (float)x, (float)y }, (float)SMALL_FONT, 0.0f, textColor);
     }
 
     // Files on bottom-most rank '1' (bottom-right corner of the tile)
-    int bottomRow = Board::Tiles - 1; // row index 7
+    int bottomLogicalRow = m_flip ? 0 : (Board::Tiles - 1);
     for (int c = 0; c < Board::Tiles; ++c)
     {
-        char fileChar = files[c];
+        // Files left->right: if not flipped, a..h; if flipped, h..a
+        char fileChar = m_flip ? (char)('h' - c) : (char)('a' + c);
         char fileStr[2] = { fileChar, '\0' };
 
-        bool isLight = ((bottomRow + c) % 2) == 0;
+        bool isLight = ((bottomLogicalRow + c) % 2) == 0;
         const Color textColor = isLight ? darkColor : lightColor;
 
         int textW = (int)MeasureTextEx(m_mainFont, fileStr, (float)SMALL_FONT, 0.0f).x;
-        int x = tileLeft(c) + m_tileSize - textW - PADDING;
-        int y = tileTop(bottomRow) + m_tileSize - SMALL_FONT - PADDING / 2;
+        int x = tileLeft(c) + (m_flip ? PADDING : (m_tileSize - textW - PADDING));
+        int y = tileTop(bottomLogicalRow) + (m_flip ? PADDING : (m_tileSize - SMALL_FONT - PADDING / 2));
         DrawTextEx(m_mainFont, fileStr, { (float)x, (float)y }, (float)SMALL_FONT, 0.0f, textColor);
     }
 }
@@ -929,8 +988,8 @@ void Renderer::drawPieces(Board& board)
             float drawH = srcH * scale;
 
             Rectangle srcRec = { 0.0f, 0.0f, srcW, srcH };
-            float centerX = (float)(m_boardOriginX + c * m_tileSize + m_tileSize / 2);
-            float centerY = (float)(m_boardOriginY + r * m_tileSize + m_tileSize / 2);
+            float centerX = (float)(tileLeft(c) + m_tileSize / 2);
+            float centerY = (float)(tileTop(r) + m_tileSize / 2);
             Rectangle dstRec = { centerX - drawW / 2.0f, centerY - drawH / 2.0f, drawW, drawH };
 
             // No rotation, white tint
