@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <algorithm>
+#include <cmath>
 #include "Renderer.h"
 
 // Define Elo options
@@ -202,11 +203,43 @@ void GameController::redo()
 
 void GameController::goToHistoryIndex(size_t index)
 {
+    // Do nothing while the engine is thinking
     if (m_aiIsThinking) return;
 
-    m_historyIndex = index;
-    m_selected.reset();
+    // Enter review mode so the engine stays paused while we jump around history
     m_isReviewingHistory = true;
+
+    // Clamp target to valid range
+    if (m_evaluationHistory.empty())
+    {
+        m_selected.reset();
+        return;
+    }
+
+    size_t target = index;
+    if (target >= m_evaluationHistory.size()) target = m_evaluationHistory.size() - 1;
+
+    // If current index is greater, undo until we reach target
+    while (m_historyIndex > target)
+    {
+        // undo() will decrement m_historyIndex when possible
+        undo();
+        // Safety: if undo() didn't change m_historyIndex (shouldn't happen), break to avoid infinite loop
+        if (m_historyIndex > 0 && m_historyIndex <= target) break;
+        if (m_historyIndex == 0 && target == 0) break;
+    }
+
+    // If current index is smaller, redo until we reach target
+    while (m_historyIndex < target)
+    {
+        // redo() will increment m_historyIndex when possible
+        redo();
+        // Safety: if redo() didn't change m_historyIndex, break
+        if (m_historyIndex >= target) break;
+    }
+
+    // Clear any selection and leave review mode enabled
+    m_selected.reset();
 }
 
 float GameController::getDisplayedEvaluation() const
@@ -330,7 +363,30 @@ void GameController::update()
                         {
                             std::string ak = moving->assetKey();
                             if (ak.size() >= 2)
-                                m_renderer->triggerMoveAnimation(sc, sr, col, row, ak[0], ak[1]);
+                            {
+                                // Detect castling: king moves two columns horizontally
+                                bool isCastle = false;
+                                int secFromX = -1, secToX = -1;
+                                char secPieceChar = 'r';
+                                if (moving->type() == PieceType::King && std::abs(col - sc) == 2)
+                                {
+                                    isCastle = true;
+                                    if (col > sc)
+                                    {
+                                        // King-side castle: rook moves from the h-file to f-file
+                                        secFromX = sc + 3; // typically 7
+                                        secToX = sc + 1;   // typically 5
+                                    }
+                                    else
+                                    {
+                                        // Queen-side castle: rook moves from the a-file to d-file
+                                        secFromX = sc - 4; // typically 0
+                                        secToX = sc - 1;   // typically 3
+                                    }
+                                }
+
+                                m_renderer->triggerMoveAnimation(sc, sr, col, row, ak[0], ak[1], isCastle, secFromX, secToX, secPieceChar);
+                            }
                         }
 
                         Board::MoveResult res = m_board.movePiece(sr, sc, row, col);

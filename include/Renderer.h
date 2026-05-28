@@ -29,7 +29,10 @@ public:
     // to the currently displayed history index.
     void render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller);
     // Trigger a move animation (from tile X/Y to tile X/Y). X==col, Y==row
-    void triggerMoveAnimation(int fromX, int fromY, int toX, int toY, char pieceChar, char pieceColor);
+    // Optional parameters allow a secondary piece (rook) to be animated alongside
+    // the primary piece (used for castling).
+    void triggerMoveAnimation(int fromX, int fromY, int toX, int toY, char pieceChar, char pieceColor,
+                              bool hasSecondary = false, int secFromX = -1, int secToX = -1, char secPieceChar = 'r');
 
 private:
     int m_windowWidth;
@@ -61,14 +64,22 @@ private:
         bool isActive = false;
         int fromX = -1, fromY = -1; // Starting grid coordinates (col,row)
         int toX = -1, toY = -1;     // Ending grid coordinates (col,row)
-        float progress = 0.0f;      // 0.0 .. 1.0
         char pieceChar = 0;         // e.g., 'p','k','q'
         char pieceColor = 0;        // 'l' or 'd'
+        float progress = 0.0f;      // 0.0 .. 1.0
+
+        // Add optional secondary piece for castling
+        bool hasSecondaryPiece = false;
+        int secFromX = -1, secToX = -1; // only X columns needed; Y will match the king's
+        char secPieceChar = 'R';
     };
 
     bool m_animatePieces = true;    // toggle for animations
     PieceAnimation m_currentAnim;
-    Rectangle m_animCheckboxBounds;
+    Rectangle m_animCheckboxBounds = { 0.0f, 0.0f, 0.0f, 0.0f }; // Initialized to avoid C26495
     // Vertical scroll offset for the move history panel (pixels)
     float m_historyScrollOffset = 0.0f;
+    // Double-click tracking for move history (timestamp and last clicked line index)
+    double m_lastHistoryClickTime = 0.0;
+    int m_lastHistoryClickedIndex = -1;
 };

@@ -44,7 +44,8 @@ static std::vector<std::string> wrapText(const std::string &text, int maxWidth, 
     if (!cur.empty()) lines.push_back(cur);
     return lines;
 }
-void Renderer::triggerMoveAnimation(int fromX, int fromY, int toX, int toY, char pieceChar, char pieceColor)
+void Renderer::triggerMoveAnimation(int fromX, int fromY, int toX, int toY, char pieceChar, char pieceColor,
+                                    bool hasSecondary, int secFromX, int secToX, char secPieceChar)
 {
     if (!m_animatePieces) return;
     m_currentAnim.isActive = true;
@@ -55,6 +56,12 @@ void Renderer::triggerMoveAnimation(int fromX, int fromY, int toX, int toY, char
     m_currentAnim.progress = 0.0f;
     m_currentAnim.pieceChar = pieceChar;
     m_currentAnim.pieceColor = pieceColor;
+
+    // Secondary piece (rook) for castling
+    m_currentAnim.hasSecondaryPiece = hasSecondary;
+    m_currentAnim.secFromX = secFromX;
+    m_currentAnim.secToX = secToX;
+    m_currentAnim.secPieceChar = secPieceChar;
 }
 Renderer::Renderer(int windowWidth, int windowHeight, int tileSize)
     : m_windowWidth(windowWidth), m_windowHeight(windowHeight), m_tileSize(tileSize)
@@ -533,7 +540,7 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
         float itemY = (float)historyY + (float)idx * lineH - m_historyScrollOffset;
         DrawTextEx(m_mainFont, moveLines[idx].c_str(), { (float)historyX, itemY }, (float)bodyFont, 0.0f, textCol);
 
-        // Click handling: if clicked inside this line, compute target ply index and notify controller
+        // Click handling: require a double-click to jump to history
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
         {
             Vector2 mp = GetMousePosition();
@@ -544,8 +551,18 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
                 // white ply = idx*2 + 1, black ply = idx*2 + 2 (if present)
                 size_t targetPly = idx * 2 + 1;
                 if (hasBlack[idx]) targetPly = idx * 2 + 2;
-                // Cap to available evaluation/history size will be handled by controller
-                controller.goToHistoryIndex(targetPly);
+
+                double currentTime = GetTime();
+                double dt = currentTime - m_lastHistoryClickTime;
+                if (dt < 0.25 && idx == m_lastHistoryClickedIndex)
+                {
+                    // Double-click detected: navigate to this history ply
+                    controller.goToHistoryIndex(targetPly);
+                }
+
+                // Update tracking (use this click as the last click)
+                m_lastHistoryClickTime = currentTime;
+                m_lastHistoryClickedIndex = idx;
             }
         }
     }
@@ -834,10 +851,11 @@ void Renderer::drawPieces(Board& board)
     {
         for (int c = 0; c < Board::Tiles; ++c)
         {
-            if (m_currentAnim.isActive && m_animatePieces && r == m_currentAnim.toY && c == m_currentAnim.toX)
+            if (m_currentAnim.isActive && m_animatePieces)
             {
-                // Destination will be drawn as the moving sprite to avoid duplication
-                continue;
+                // Destination(s) will be drawn as the moving sprite(s) to avoid duplication
+                if (r == m_currentAnim.toY && c == m_currentAnim.toX) continue;
+                if (m_currentAnim.hasSecondaryPiece && r == m_currentAnim.toY && c == m_currentAnim.secToX) continue;
             }
 
             const Piece* p = board.at(r, c);
@@ -900,6 +918,34 @@ void Renderer::drawPieces(Board& board)
             Rectangle srcRec = { 0.0f, 0.0f, srcW, srcH };
             Rectangle dstRec = { cur.x - drawW / 2.0f, cur.y - drawH / 2.0f, drawW, drawH };
             DrawTexturePro(*tex, srcRec, dstRec, {0,0}, 0.0f, WHITE);
+        }
+
+        // If a secondary piece (rook) should move (castling), draw it using the same progress curve
+        if (m_currentAnim.hasSecondaryPiece)
+        {
+            Vector2 rookStart = { (float)tileLeft(m_currentAnim.secFromX) + m_tileSize * 0.5f,
+                                  (float)tileTop(m_currentAnim.fromY) + m_tileSize * 0.5f };
+            Vector2 rookTarget = { (float)tileLeft(m_currentAnim.secToX) + m_tileSize * 0.5f,
+                                   (float)tileTop(m_currentAnim.toY) + m_tileSize * 0.5f };
+            Vector2 rookCur = Vector2Lerp(rookStart, rookTarget, curvedProgress);
+
+            std::string key2;
+            key2.push_back(m_currentAnim.secPieceChar);
+            key2.push_back(m_currentAnim.pieceColor); // rook color matches primary piece
+            const Texture2D* tex2 = textureForKey(key2);
+            if (tex2)
+            {
+                float srcW = (float)tex2->width;
+                float srcH = (float)tex2->height;
+                float maxW = (float)m_tileSize * 0.85f;
+                float maxH = (float)m_tileSize * 0.85f;
+                float scale = std::min(maxW / srcW, maxH / srcH);
+                float drawW = srcW * scale;
+                float drawH = srcH * scale;
+                Rectangle srcRec = { 0.0f, 0.0f, srcW, srcH };
+                Rectangle dstRec = { rookCur.x - drawW / 2.0f, rookCur.y - drawH / 2.0f, drawW, drawH };
+                DrawTexturePro(*tex2, srcRec, dstRec, {0,0}, 0.0f, WHITE);
+            }
         }
 
         // Clean reset: when finished, disable animation so next frame the board draws normally
