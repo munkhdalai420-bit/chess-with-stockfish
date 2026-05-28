@@ -51,7 +51,7 @@ private:
     std::string textureFilenameForKey(const std::string& key) const;
     const Texture2D* textureForKey(const std::string& key) const;
 
-    void drawBoard(Board& board, const std::optional<std::pair<int,int>>& selected) const;
+    void drawBoard(Board& board, const std::optional<std::pair<int,int>>& selected, const GameController* controller) const;
     void drawPieces(Board& board);
     // Cycle the visual theme (used by UI)
     void cycleTheme();

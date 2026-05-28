@@ -74,17 +74,17 @@ GameController::GameController(int windowWidth, int windowHeight, int tileSize, 
     // If the human chooses to play Black, have the AI start thinking for White immediately
     if (m_playerColor == PieceColor::Black)
     {
-        m_aiIsThinking = true;
+        m_engineMode = EngineMode::AI_Thinking;
         m_engine.startSearch(m_board.getFEN(), m_timePerMoveMs);
     }
 }
 void GameController::endMatch()
 {
     // Abort any running engine search and return to lobby state
-    if (m_aiIsThinking)
+    if (m_engineMode == EngineMode::AI_Thinking)
     {
         m_engine.stopSearch();
-        m_aiIsThinking = false;
+        m_engineMode = EngineMode::Idle;
     }
     // Exit match mode
     m_gameStarted = false;
@@ -143,13 +143,13 @@ int GameController::getMateInMoves() const { return m_engine.getMateInMoves(); }
 
 bool GameController::canUndo() const
 {
-    if (m_aiIsThinking) return false;
+    if (m_engineMode == EngineMode::AI_Thinking) return false;
     return m_historyIndex > 0;
 }
 
 bool GameController::canRedo() const
 {
-    if (m_aiIsThinking) return false;
+    if (m_engineMode == EngineMode::AI_Thinking) return false;
     return (m_historyIndex + 1) < m_evaluationHistory.size();
 }
 
@@ -171,13 +171,15 @@ void GameController::startMatch()
     // If the human chooses to play Black, have the AI start thinking for White immediately
     if (m_playerColor == PieceColor::Black)
     {
-        m_aiIsThinking = true;
+        m_engineMode = EngineMode::AI_Thinking;
         m_engine.startSearch(m_board.getFEN(), m_timePerMoveMs);
     }
 }
 void GameController::undo()
 {
-    if (m_aiIsThinking) return;
+    // Clear any pending hint when user changes board state
+    clearActiveHint();
+    if (m_engineMode == EngineMode::AI_Thinking) return;
 
     m_board.undoMove();
     if (m_historyIndex > 0) --m_historyIndex;
@@ -190,7 +192,9 @@ void GameController::undo()
 
 void GameController::redo()
 {
-    if (m_aiIsThinking) return;
+    // Clear any pending hint when user changes board state
+    clearActiveHint();
+    if (m_engineMode == EngineMode::AI_Thinking) return;
 
     m_board.redoMove();
     if (m_historyIndex + 1 < m_evaluationHistory.size()) ++m_historyIndex;
@@ -203,8 +207,11 @@ void GameController::redo()
 
 void GameController::goToHistoryIndex(size_t index)
 {
+    // Clear any pending hint when user changes board state
+    clearActiveHint();
+
     // Do nothing while the engine is thinking
-    if (m_aiIsThinking) return;
+    if (m_engineMode == EngineMode::AI_Thinking) return;
 
     // Enter review mode so the engine stays paused while we jump around history
     m_isReviewingHistory = true;
@@ -256,10 +263,45 @@ std::optional<std::pair<int,int>> GameController::getSelected() const
 std::string GameController::getMoveMessage() const { return m_moveMessage; }
 float GameController::getMessageTimer() const { return m_messageTimer; }
 
+void GameController::requestHint()
+{
+    // Only allow a hint when engine is idle, a match is running, and it's the human's turn
+    if (m_engineMode != EngineMode::Idle) return;
+    if (!m_gameStarted) return;
+    if (m_board.getCurrentTurn() != m_playerColor) return; // it's AI's turn
+
+    m_engineMode = EngineMode::Hint_Calculating;
+    m_hintMove.clear();
+    // Short, fixed-time hint search (ms)
+    constexpr int HINT_TIME_MS = 400;
+    m_engine.startSearch(m_board.getFEN(), HINT_TIME_MS);
+}
+
+void GameController::clearActiveHint()
+{
+    m_hintMove.clear();
+    if (m_engineMode == EngineMode::Hint_Calculating)
+    {
+        // Abort the ongoing hint search and reset mode
+        m_engine.stopSearch();
+        m_engineMode = EngineMode::Idle;
+    }
+}
+
+bool GameController::canRequestHint() const
+{
+    return (m_engineMode == EngineMode::Idle) && m_gameStarted && (m_board.getCurrentTurn() == m_playerColor);
+}
+
+std::string GameController::getHintMove() const
+{
+    return m_hintMove;
+}
+
 void GameController::update()
 {
     // Undo/Redo keys (only when AI is not thinking)
-    if (!m_aiIsThinking)
+    if (m_engineMode != EngineMode::AI_Thinking)
     {
         if (IsKeyPressed(KEY_LEFT))
         {
@@ -268,6 +310,18 @@ void GameController::update()
         if (IsKeyPressed(KEY_RIGHT))
         {
             redo();
+        }
+    }
+
+    // If a hint calculation was requested, poll engine for bestmove and capture it
+    if (m_engineMode == EngineMode::Hint_Calculating)
+    {
+        std::string best;
+        if (m_engine.checkBestMove(best))
+        {
+            // Store hint and return engine to idle
+            m_hintMove = best;
+            m_engineMode = EngineMode::Idle;
         }
     }
 
@@ -393,6 +447,8 @@ void GameController::update()
                         if (res != Board::MoveResult::Invalid)
                         {
                             m_selected.reset();
+                            // Clear any active hint immediately when a human move is executed
+                            clearActiveHint();
                             m_isReviewingHistory = false;
 
                             if (res == Board::MoveResult::Check)
@@ -460,19 +516,19 @@ void GameController::update()
         }
     }
 
-    // AI trigger
+    // AI trigger: start engine search for AI move when idle and opponent to move
     if (m_board.getGameState() == Board::GameState::Active &&
-        !m_aiIsThinking &&
+        m_engineMode == EngineMode::Idle &&
         !m_isReviewingHistory &&
         m_board.getCurrentTurn() == PieceColor::Black)
     {
-        m_aiIsThinking = true;
+        m_engineMode = EngineMode::AI_Thinking;
         std::string currentFen = m_board.getFEN();
         m_engine.startSearch(currentFen, 1000);
     }
 
-    // AI polling
-    if (m_aiIsThinking)
+    // AI polling: when engine is thinking for an AI move, check for bestmove
+    if (m_engineMode == EngineMode::AI_Thinking)
     {
         std::string bestMove;
         if (m_engine.checkBestMove(bestMove))
@@ -490,6 +546,8 @@ void GameController::update()
 
             if (res != Board::MoveResult::Invalid)
             {
+                // Clear any active hint immediately when the AI move is applied
+                clearActiveHint();
                 if (res == Board::MoveResult::Check)
                 {
                     if (m_audioEnabled) PlaySound(m_sndMoveCheck);
@@ -559,7 +617,7 @@ void GameController::update()
                 m_evaluationHistory.push_back(eval);
                 m_historyIndex = m_evaluationHistory.size() - 1;
 
-                m_aiIsThinking = false;
+                m_engineMode = EngineMode::Idle;
                 std::cout << "Evaluation of move: " << eval << std::endl;
         }
     }
@@ -577,10 +635,10 @@ void GameController::update()
         if (gs == Board::GameState::Checkmate || gs == Board::GameState::Stalemate)
         {
             m_gameStarted = false;
-            if (m_aiIsThinking)
+            if (m_engineMode == EngineMode::AI_Thinking)
             {
                 m_engine.stopSearch();
-                m_aiIsThinking = false;
+                m_engineMode = EngineMode::Idle;
             }
             // Reset mate detection and evaluation history so evaluation bar is neutral
             m_engine.clearMateDetection();

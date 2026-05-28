@@ -240,7 +240,7 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     }
 
     // If Disco mode is active, we let drawBoard pick colors dynamically based on time.
-    drawBoard(board, selected);
+    drawBoard(board, selected, &controller);
 
     // Move hint overlays: show legal destinations for the currently selected piece
     if (selected.has_value())
@@ -327,7 +327,9 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
             DrawRectangle(barX, barY + (barH - whiteH), BAR_W, whiteH, WHITE);
         }
         // Border
-        DrawRectangleLines(barX, barY, BAR_W, barH, WHITE);
+        //DrawRectangleLines(barX, barY, BAR_W, barH, WHITE);
+        Rectangle rec = { barX, barY, BAR_W, barH };
+        DrawRectangleLinesEx(rec, 2, WHITE);
     }
     // Draw move history sidebar on the right
     const int panelX = m_windowWidth - m_sidebarWidth;
@@ -397,51 +399,72 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
             controller.cycleTargetElo();
         }
 
-        // Primary button row (one row): three evenly spaced buttons
-        const float ROW_Y = CTRL_Y + ctrlH + ctrlPad;
-        const float SP = 8.0f;
-        const float btnW = (ctrlW - SP * 2) / 3.0f; // three buttons with two gaps
-        Rectangle undoRect = { ctrlX, ROW_Y, btnW, ctrlH };
-        Rectangle lifecycleRect = { ctrlX + (btnW + SP), ROW_Y, btnW, ctrlH };
-        Rectangle redoRect = { ctrlX + 2 * (btnW + SP), ROW_Y, btnW, ctrlH };
+        // Single horizontal control row with 4 buttons: Undo | Start/End | Redo | Hint
+        const float buttonHeight = 40.0f;
+        const float pad = 10.0f;
+        const float gap = 8.0f;
+        const float iconBtnWidth = buttonHeight;
+        const float sidebarWf = (float)panelW;
+        const float middleBtnWidth = sidebarWf - (2.0f * pad) - (3.0f * iconBtnWidth) - (3.0f * gap);
+        const float rowY = CTRL_Y + ctrlH + ctrlPad;
 
-        // Undo/Redo are disabled before a match starts or while AI is thinking
-        bool canUndo = matchStarted ? controller.canUndo() : false;
-        bool canRedo = matchStarted ? controller.canRedo() : false;
-        bool hoverUndo = canUndo && CheckCollisionPointRec(mousePos, undoRect);
-        bool hoverRedo = canRedo && CheckCollisionPointRec(mousePos, redoRect);
-        bool hoverLifecycle = CheckCollisionPointRec(mousePos, lifecycleRect);
+        float bx = (float)panelX + pad;
+        Rectangle undoRect = { bx, rowY, iconBtnWidth, buttonHeight };
+        Rectangle startRect = { undoRect.x + iconBtnWidth + gap, rowY, middleBtnWidth, buttonHeight };
+        Rectangle redoRect = { startRect.x + middleBtnWidth + gap, rowY, iconBtnWidth, buttonHeight };
+        Rectangle hintRect = { redoRect.x + iconBtnWidth + gap, rowY, iconBtnWidth, buttonHeight };
 
-        // Draw Undo
-        if (canUndo)
-            DrawRectangleRec(undoRect, hoverUndo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f));
+        bool enabledGlobal = controller.isMatchStarted();
+        bool canUndoBtn = enabledGlobal && controller.canUndo();
+        bool canRedoBtn = enabledGlobal && controller.canRedo();
+        bool canHintBtn = controller.canRequestHint();
+
+        Vector2 mp = GetMousePosition();
+        bool hoverUndo = canUndoBtn && CheckCollisionPointRec(mp, undoRect);
+        bool hoverStart = CheckCollisionPointRec(mp, startRect);
+        bool hoverRedo = canRedoBtn && CheckCollisionPointRec(mp, redoRect);
+        bool hoverHint = canHintBtn && CheckCollisionPointRec(mp, hintRect);
+
+        // Draw buttons
+        DrawRectangleRec(undoRect, canUndoBtn ? (hoverUndo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.2f));
+        DrawRectangleRec(startRect, hoverStart ? Fade(RED, 0.9f) : RED);
+        DrawRectangleRec(redoRect, canRedoBtn ? (hoverRedo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.2f));
+        DrawRectangleRec(hintRect, canHintBtn ? (hoverHint ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.2f));
+
+        // Labels
+        const char* startLabel = matchStarted ? "END" : "START";
+        const int BTN_FONT = 22;
+        // Undo label "<"
+        DrawTextEx(m_mainFont, "<", { undoRect.x + undoRect.width/2 - MeasureTextEx(m_mainFont, "<", (float)BTN_FONT, 0).x/2, undoRect.y + (undoRect.height - BTN_FONT)/2 }, (float)BTN_FONT, 0.0f, canUndoBtn ? WHITE : Fade(WHITE, 0.4f));
+        // Start/End label
+        DrawTextEx(m_mainFont, startLabel, { startRect.x + 12, startRect.y + (startRect.height - BTN_FONT)/2 }, (float)BTN_FONT, 0.0f, WHITE);
+        // Redo label ">"
+        DrawTextEx(m_mainFont, ">", { redoRect.x + redoRect.width/2 - MeasureTextEx(m_mainFont, ">", (float)BTN_FONT, 0).x/2, redoRect.y + (redoRect.height - BTN_FONT)/2 }, (float)BTN_FONT, 0.0f, canRedoBtn ? WHITE : Fade(WHITE, 0.4f));
+
+        // Hint icon label: try emoji, fallback to yellow circle
+        const char* hintLabel = "💡";
+        float hintTextW = MeasureTextEx(m_mainFont, hintLabel, 20.0f, 0).x;
+        if (hintTextW > 0.0f)
+        {
+            DrawTextEx(m_mainFont, hintLabel, { hintRect.x + hintRect.width/2 - hintTextW/2, hintRect.y + (hintRect.height - 20.0f)/2 }, 20.0f, 0.0f, canHintBtn ? WHITE : Fade(WHITE, 0.4f));
+        }
         else
-            DrawRectangleRec(undoRect, Fade(GRAY, matchStarted ? 0.3f : 0.15f));
-        DrawTextEx(m_mainFont, "UNDO", { undoRect.x + 8, undoRect.y + 6 }, (float)ELO_FONT, 0.0f, canUndo ? WHITE : Fade(WHITE, 0.3f));
+        {
+            // draw a small yellow circle centered
+            Vector2 center = { hintRect.x + hintRect.width/2, hintRect.y + hintRect.height/2 };
+            DrawCircleV(center, hintRect.width*0.2f, Color{ 255, 215, 0, (unsigned char)(canHintBtn ? 255 : 100) });
+        }
 
-        // Draw Lifecycle (Start Match / End Match)
-        const char* lifecycleLabel = matchStarted ? "END" : "START";
-        // Emphasize lifecycle button using red background
-        DrawRectangleRec(lifecycleRect, hoverLifecycle ? Fade(RED, 0.9f) : RED);
-        DrawTextEx(m_mainFont, lifecycleLabel, { lifecycleRect.x + 20, lifecycleRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
-
-        // Draw Redo
-        if (canRedo)
-            DrawRectangleRec(redoRect, hoverRedo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f));
-        else
-            DrawRectangleRec(redoRect, Fade(GRAY, matchStarted ? 0.3f : 0.15f));
-        DrawTextEx(m_mainFont, "REDO", { redoRect.x + 8, redoRect.y + 6 }, (float)ELO_FONT, 0.0f, canRedo ? WHITE : Fade(WHITE, 0.3f));
-
-        // Click handling: lifecycle button toggles match state; undo/redo map to controller
+        // Click handling for the four buttons
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
         {
-            if (hoverUndo && canUndo) controller.undo();
-            else if (hoverLifecycle)
+            if (hoverUndo && canUndoBtn) controller.undo();
+            else if (hoverStart)
             {
-                if (matchStarted) controller.endMatch();
-                else controller.startMatch();
+                if (matchStarted) controller.endMatch(); else controller.startMatch();
             }
-            else if (hoverRedo && canRedo) controller.redo();
+            else if (hoverRedo && canRedoBtn) controller.redo();
+            else if (hoverHint && canHintBtn) controller.requestHint();
         }
     }
 
@@ -685,7 +708,7 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     }
 }
 
-void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& selected) const
+void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& selected, const GameController* controller) const
 {
     // Colors for the board
     // Select colors based on the currently selected theme
@@ -700,11 +723,13 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
         int idx = ((int)(t / INTERVAL)) % 4;
         switch (idx)
         {
-            case 0: themeToUse = BoardTheme::Grass; break;
-            case 1: themeToUse = BoardTheme::Wood; break;
-            case 2: themeToUse = BoardTheme::Ocean; break;
-            case 3: themeToUse = BoardTheme::Classic; break;
+        case 0: themeToUse = BoardTheme::Grass; break;
+        case 1: themeToUse = BoardTheme::Wood; break;
+        case 2: themeToUse = BoardTheme::Ocean; break;
+        case 3: themeToUse = BoardTheme::Classic; break;
         }
+
+        // Draw hint overlay if controller provided and has an active hint
     }
 
     switch (themeToUse)
@@ -764,8 +789,37 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
             }
         }
     }
-    DrawRectangleLines(m_boardOriginX, m_boardOriginY, m_tileSize*8, m_tileSize * 8, WHITE);
+    Rectangle rec = { m_boardOriginX, m_boardOriginY, m_tileSize * 8, m_tileSize * 8 };
+    DrawRectangleLinesEx(rec, 2, WHITE);
 
+    if (controller)
+    {
+        std::string hint = controller->getHintMove();
+        if (!hint.empty())
+        {
+            // Expect at least 4 characters: e.g., e2e4
+            if (hint.size() >= 4)
+            {
+                char f1 = hint[0]; char r1c = hint[1];
+                char f2 = hint[2]; char r2c = hint[3];
+                if (f1 >= 'a' && f1 <= 'h' && r1c >= '1' && r1c <= '8' && f2 >= 'a' && f2 <= 'h' && r2c >= '1' && r2c <= '8')
+                {
+                    int c1 = f1 - 'a';
+                    int r1 = 8 - (r1c - '0');
+                    int c2 = f2 - 'a';
+                    int r2 = 8 - (r2c - '0');
+                    Color fillCol = Fade(GREEN, 0.25f);
+                    Rectangle s1 = { (float)tileLeft(c1), (float)tileTop(r1), (float)m_tileSize, (float)m_tileSize };
+                    Rectangle s2 = { (float)tileLeft(c2), (float)tileTop(r2), (float)m_tileSize, (float)m_tileSize };
+                    DrawRectangleRec(s1, fillCol);
+                    DrawRectangleRec(s2, fillCol);
+                    // Draw sharp border outlines
+                    DrawRectangleLinesEx(s1, 3, GREEN);
+                    DrawRectangleLinesEx(s2, 3, GREEN);
+                }
+            }
+        }
+    }
 
     // If current player is in check, highlight their king's tile.
     // This is intentionally done once per frame (not per-tile) for performance.

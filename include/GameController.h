@@ -42,6 +42,14 @@ public:
 
     // Process input and advance game state. Should be called once per frame.
     void update();
+    // Request a short engine search to compute a hint move for the current position.
+    void requestHint();
+    // Cancel any active hint and stop hint searches
+    void clearActiveHint();
+    // Whether a hint can be requested right now (engine idle, match started, human to move)
+    bool canRequestHint() const;
+    // Get last computed hint move (UCI string like "e2e4") or empty if none
+    std::string getHintMove() const;
 
     Board& getBoard();
     std::optional<std::pair<int,int>> getSelected() const;
@@ -54,7 +62,13 @@ private:
     Board m_board;
     EngineManager m_engine;
 
-    bool m_aiIsThinking = false;
+    // Engine mode state machine to track whether engine is idle, thinking for AI move,
+    // or calculating a hint requested by the user.
+    enum class EngineMode { Idle, AI_Thinking, Hint_Calculating };
+    EngineMode m_engineMode = EngineMode::Idle;
+
+    // Last computed hint move (in engine UCI format like "e2e4")
+    std::string m_hintMove = "";
     bool m_isReviewingHistory = false;
     std::optional<std::pair<int,int>> m_selected;
 
