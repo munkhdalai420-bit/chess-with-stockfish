@@ -86,6 +86,20 @@ private:
     int m_eloIndex = 3; // index into ELO_OPTIONS (default to 2000)
     bool m_gameStarted = false;
 
+    // Private helpers extracted from update() to improve readability and single-responsibility
+    void handleKeyboardShortcuts();
+    void pollHintCalculation();
+    void handleRestartKey();
+    void handlePromotionClick();
+    void handleBoardClick(const Vector2& mp);
+    bool screenToBoardCoords(const Vector2& mp, int& outRow, int& outCol) const;
+    void maybeTriggerAI();
+    void pollEngineForBestMove();
+    void applyEngineMove(const std::string& bestMove);
+    void playMoveSound(Board::MoveResult res);
+    void recordEvaluationForNewPosition();
+    void checkTerminalStateAndReset();
+
 public:
     // Accessors to allow Renderer/UI to read and toggle the player's chosen side
     PlayerColor getPlayerColor() const { return m_playerColor; }
@@ -94,6 +108,8 @@ public:
     // Engine state query for UI: true if engine is currently idle
     bool isEngineIdle() const { return m_engineMode == EngineMode::Idle; }
 
+private:
+    // Encapsulated UI/audio/layout members kept private to avoid external mutation
     std::string m_moveMessage;
     float m_messageTimer = 0.0f;
 
@@ -101,7 +117,7 @@ public:
     int m_windowHeight;
     int m_tileSize;
     int m_sidebarWidth;
-    Renderer* m_renderer = nullptr;
+    Renderer* m_renderer = nullptr; // non-owning pointer
 
     // Sound effects
     Sound m_sndCapture;

@@ -80,7 +80,7 @@ public:
     // Check whether moving the piece at (r1,c1) to (r2,c2) would be legal
     // (including checks that would leave the king in check). This simulates
     // the move internally and restores board state before returning.
-    bool wouldMoveBeLegal(int startRow, int startCol, int endRow, int endCol);
+    bool wouldMoveBeLegal(int startRow, int startCol, int endRow, int endCol) const;
     // Promotion handling
     bool isAwaitingPromotion() const;
     std::pair<int,int> getPendingPromotionSquare() const;

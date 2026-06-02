@@ -21,16 +21,16 @@ GameController::GameController(int windowWidth, int windowHeight, int tileSize, 
     {
         m_sndCapture = LoadSound("capture.mp3");
         m_sndCastle = LoadSound("castle.mp3");
-        m_sndMoveCheck = LoadSound("move-check.mp3");
-        m_sndMoveSelf = LoadSound("move-self.mp3");
+        m_sndMoveCheck = LoadSound("check.mp3");
+        m_sndMoveSelf = LoadSound("move.mp3");
         m_sndPromote = LoadSound("promote.mp3");
 
         // Validate loaded sounds: raylib Sound contains a data pointer when valid
         bool anyFailed = false;
         if (m_sndCapture.frameCount == 0) { std::printf("Warning: failed to load 'capture.mp3'\n"); anyFailed = true; }
         if (m_sndCastle.frameCount == 0) { std::printf("Warning: failed to load 'castle.mp3'\n"); anyFailed = true; }
-        if (m_sndMoveCheck.frameCount == 0) { std::printf("Warning: failed to load 'move-check.mp3'\n"); anyFailed = true; }
-        if (m_sndMoveSelf.frameCount == 0) { std::printf("Warning: failed to load 'move-self.mp3'\n"); anyFailed = true; }
+        if (m_sndMoveCheck.frameCount == 0) { std::printf("Warning: failed to load 'check.mp3'\n"); anyFailed = true; }
+        if (m_sndMoveSelf.frameCount == 0) { std::printf("Warning: failed to load 'move.mp3'\n"); anyFailed = true; }
         if (m_sndPromote.frameCount == 0) { std::printf("Warning: failed to load 'promote.mp3'\n"); anyFailed = true; }
 
         if (anyFailed)
@@ -64,14 +64,312 @@ GameController::GameController(int windowWidth, int windowHeight, int tileSize, 
         if (ELO_OPTIONS[i] == m_targetElo) { m_eloIndex = i; break; }
     }
 
-
-
     // Initialize evaluation history with current engine evaluation (may be 0.0 initially)
     m_evaluationHistory.clear();
     m_evaluationHistory.push_back(m_engine.getEvaluation());
     m_historyIndex = 0;
-
 }
+
+void GameController::handleKeyboardShortcuts()
+{
+    if (m_engineMode != EngineMode::AI_Thinking)
+    {
+        if (IsKeyPressed(KEY_LEFT)) undo();
+        if (IsKeyPressed(KEY_RIGHT)) redo();
+    }
+    if (IsKeyPressed(KEY_R)) startMatch();
+}
+
+void GameController::pollHintCalculation()
+{
+    if (m_engineMode != EngineMode::Hint_Calculating) return;
+    std::string best;
+    if (m_engine.checkBestMove(best))
+    {
+        m_hintMove = best;
+        m_engineMode = EngineMode::Idle;
+    }
+}
+
+void GameController::handleRestartKey()
+{
+}
+
+void GameController::handlePromotionClick()
+{
+    if (!IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) return;
+    Vector2 mp = GetMousePosition();
+    const int ICON_SIZE = 64;
+    const int PAD = 12;
+    const int COUNT = 4;
+    int totalW = COUNT * ICON_SIZE + (COUNT - 1) * PAD;
+    int startX = (m_windowWidth - totalW) / 2;
+    int y = (m_windowHeight - ICON_SIZE) / 2;
+
+    for (int i = 0; i < COUNT; ++i)
+    {
+        int x = startX + i * (ICON_SIZE + PAD);
+        Rectangle rect = { (float)x, (float)y, (float)ICON_SIZE, (float)ICON_SIZE };
+        if (CheckCollisionPointRec(mp, rect))
+        {
+            PieceType choice = PieceType::Queen;
+            switch (i)
+            {
+            case 0: choice = PieceType::Queen; break;
+            case 1: choice = PieceType::Rook; break;
+            case 2: choice = PieceType::Bishop; break;
+            case 3: choice = PieceType::Knight; break;
+            }
+            Board::MoveResult pres = m_board.completePromotion(choice);
+            if (pres == Board::MoveResult::Promotion)
+            {
+                if (m_audioEnabled) PlaySound(m_sndPromote);
+                auto last = m_board.getLastMove();
+                if (last.has_value())
+                {
+                    std::string san = m_board.moveToSAN(last.value());
+                    m_board.setLastMoveSAN(san);
+                    std::cout << "Move played: " << san << std::endl;
+                }
+                std::cout << "FEN: " << m_board.getFEN() << std::endl;
+                std::cout << "PGN: " << m_board.getFullPGNText() << std::endl;
+                std::cout << "-------------------" << std::endl;
+            }
+            m_selected.reset();
+            break;
+        }
+    }
+}
+
+bool GameController::screenToBoardCoords(const Vector2& mp, int& outRow, int& outCol) const
+{
+    int boardPixelSize = m_tileSize * Board::Tiles;
+    int availableWidth = m_windowWidth - m_sidebarWidth;
+    int originX = (availableWidth - boardPixelSize) / 2;
+    int originY = (m_windowHeight - boardPixelSize) / 2;
+
+    float localX = mp.x - originX;
+    float localY = mp.y - originY;
+    if (localX < 0 || localY < 0 || localX >= boardPixelSize || localY >= boardPixelSize) return false;
+    outCol = (int)(localX / m_tileSize);
+    outRow = (int)(localY / m_tileSize);
+    return true;
+}
+
+void GameController::handleBoardClick(const Vector2& mp)
+{
+    int row, col;
+    if (!screenToBoardCoords(mp, row, col)) { m_selected.reset(); return; }
+
+    // Only allow human input when it's the human's turn
+    PieceColor humanPieceColor = (m_playerColor == PlayerColor::White) ? PieceColor::White : PieceColor::Black;
+    if (m_board.getCurrentTurn() != humanPieceColor) return;
+
+    // Flip coordinates for black perspective
+    if (m_playerColor == PlayerColor::Black)
+    {
+        col = Board::Tiles - 1 - col;
+        row = Board::Tiles - 1 - row;
+    }
+
+    if (!m_selected.has_value())
+    {
+        if (m_board.at(row, col) != nullptr)
+            m_selected = std::make_pair(row, col);
+        return;
+    }
+
+    auto [sr, sc] = m_selected.value();
+    if (sr == row && sc == col) { m_selected.reset(); return; }
+
+    // Trigger animation before applying the move
+    const Piece* moving = m_board.at(sr, sc);
+    if (moving && m_renderer)
+    {
+        std::string ak = moving->assetKey();
+        if (ak.size() >= 2)
+        {
+            bool isCastle = false;
+            int secFromX = -1, secToX = -1;
+            char secPieceChar = 'r';
+            if (moving->type() == PieceType::King && std::abs(col - sc) == 2)
+            {
+                isCastle = true;
+                if (col > sc) { secFromX = sc + 3; secToX = sc + 1; }
+                else { secFromX = sc - 4; secToX = sc - 1; }
+            }
+            m_renderer->triggerMoveAnimation(sc, sr, col, row, ak[0], ak[1], isCastle, secFromX, secToX, secPieceChar);
+        }
+    }
+
+    Board::MoveResult res = m_board.movePiece(sr, sc, row, col);
+    if (res != Board::MoveResult::Invalid)
+    {
+        m_selected.reset();
+        clearActiveHint();
+        m_isReviewingHistory = false;
+        playMoveSound(res);
+
+        if (res != Board::MoveResult::Promotion)
+        {
+            auto last = m_board.getLastMove();
+            if (last.has_value())
+            {
+                std::string san = m_board.moveToSAN(last.value());
+                m_board.setLastMoveSAN(san);
+            }
+            std::cout << "FEN: " << m_board.getFEN() << std::endl;
+            std::cout << "PGN: " << m_board.getFullPGNText() << std::endl;
+            std::cout << "-------------------" << std::endl;
+            recordEvaluationForNewPosition();
+        }
+    }
+    else
+    {
+        m_moveMessage = m_board.getLastMoveError();
+        if (m_moveMessage.empty()) m_moveMessage = "Illegal move";
+        m_messageTimer = 2.5f;
+        std::printf("Move failed: %s\n", m_moveMessage.c_str());
+
+        if (m_board.at(row, col) != nullptr) m_selected = std::make_pair(row, col);
+        else m_selected.reset();
+    }
+}
+
+void GameController::maybeTriggerAI()
+{
+    if (!m_gameStarted || m_engineMode != EngineMode::Idle) return;
+    if (m_board.getGameState() != Board::GameState::Active) return;
+    if (m_isReviewingHistory) return;
+    PieceColor humanPieceColor = (m_playerColor == PlayerColor::White) ? PieceColor::White : PieceColor::Black;
+    if (m_board.getCurrentTurn() == humanPieceColor) return;
+
+    m_engineMode = EngineMode::AI_Thinking;
+    std::string currentFen = m_board.getFEN();
+    m_engine.startSearch(currentFen, 1000);
+}
+
+void GameController::pollEngineForBestMove()
+{
+    if (m_engineMode != EngineMode::AI_Thinking) return;
+    std::string bestMove;
+    if (!m_engine.checkBestMove(bestMove)) return;
+    // Apply engine move
+    applyEngineMove(bestMove);
+}
+
+void GameController::applyEngineMove(const std::string& bestMove)
+{
+    Board::ChessMove engineMove = m_board.parseEngineMove(bestMove);
+    const Piece* moving = m_board.at(engineMove.r1, engineMove.c1);
+    if (moving && m_renderer)
+    {
+        std::string ak = moving->assetKey();
+        if (ak.size() >= 2)
+            m_renderer->triggerMoveAnimation(engineMove.c1, engineMove.r1, engineMove.c2, engineMove.r2, ak[0], ak[1]);
+    }
+
+    Board::MoveResult res = m_board.movePiece(engineMove.r1, engineMove.c1, engineMove.r2, engineMove.c2);
+    if (res != Board::MoveResult::Invalid)
+    {
+        playMoveSound(res);
+
+        if (res == Board::MoveResult::Promotion)
+        {
+            if (bestMove.length() == 5)
+            {
+                char promotionChar = bestMove[4];
+                PieceType chosenType = PieceType::Queen;
+                switch (promotionChar)
+                {
+                case 'q': chosenType = PieceType::Queen; break;
+                case 'r': chosenType = PieceType::Rook; break;
+                case 'b': chosenType = PieceType::Bishop; break;
+                case 'n': chosenType = PieceType::Knight; break;
+                }
+                m_board.completePromotion(chosenType);
+                if (m_audioEnabled) PlaySound(m_sndPromote);
+            }
+        }
+
+        if (res != Board::MoveResult::Promotion)
+        {
+            auto last = m_board.getLastMove();
+            if (last.has_value())
+            {
+                std::string san = m_board.moveToSAN(last.value());
+                m_board.setLastMoveSAN(san);
+                std::cout << "AI Move: " << san << std::endl;
+            }
+        }
+        else
+        {
+            auto last = m_board.getLastMove();
+            if (last.has_value())
+            {
+                std::string san = m_board.moveToSAN(last.value());
+                m_board.setLastMoveSAN(san);
+                std::cout << "AI Move (Promotion): " << san << std::endl;
+            }
+        }
+
+        std::cout << "FEN: " << m_board.getFEN() << std::endl;
+        std::cout << "PGN: " << m_board.getFullPGNText() << std::endl;
+        std::cout << "-------------------" << std::endl;
+    }
+
+    // Record evaluation after AI move
+    float eval = m_engine.getEvaluation();
+    if (m_historyIndex + 1 < m_evaluationHistory.size()) m_evaluationHistory.resize(m_historyIndex + 1);
+    m_evaluationHistory.push_back(eval);
+    m_historyIndex = m_evaluationHistory.size() - 1;
+
+    m_engineMode = EngineMode::Idle;
+    std::cout << "Evaluation of move: " << eval << std::endl;
+}
+
+void GameController::playMoveSound(Board::MoveResult res)
+{
+    if (!m_audioEnabled) return;
+    switch (res)
+    {
+    case Board::MoveResult::Check: PlaySound(m_sndMoveCheck); break;
+    case Board::MoveResult::Castle: PlaySound(m_sndCastle); break;
+    case Board::MoveResult::Capture: PlaySound(m_sndCapture); break;
+    case Board::MoveResult::Promotion: /* handled elsewhere */ break;
+    default: PlaySound(m_sndMoveSelf); break;
+    }
+}
+
+void GameController::recordEvaluationForNewPosition()
+{
+    float eval = m_engine.getEvaluation();
+    if (m_historyIndex + 1 < m_evaluationHistory.size())
+    {
+        m_evaluationHistory.resize(m_historyIndex + 1);
+    }
+    m_evaluationHistory.push_back(eval);
+    m_historyIndex = m_evaluationHistory.size() - 1;
+}
+
+void GameController::checkTerminalStateAndReset()
+{
+    Board::GameState gs = m_board.getGameState();
+    if (gs == Board::GameState::Checkmate || gs == Board::GameState::Stalemate)
+    {
+        m_gameStarted = false;
+        if (m_engineMode == EngineMode::AI_Thinking)
+        {
+            m_engine.stopSearch();
+            m_engineMode = EngineMode::Idle;
+        }
+        m_engine.clearMateDetection();
+        m_evaluationHistory.clear();
+        m_evaluationHistory.push_back(0.0f);
+        m_historyIndex = 0;
+    }
+}
+ 
 void GameController::endMatch()
 {
     // Abort any running engine search and return to lobby state
@@ -299,342 +597,28 @@ std::string GameController::getHintMove() const
 
 void GameController::update()
 {
-    // Undo/Redo keys (only when AI is not thinking)
-    if (m_engineMode != EngineMode::AI_Thinking)
-    {
-        if (IsKeyPressed(KEY_LEFT))
-        {
-            undo();
-        }
-        if (IsKeyPressed(KEY_RIGHT))
-        {
-            redo();
-        }
-    }
+    // Handle keyboard shortcuts (undo/redo/restart)
+    handleKeyboardShortcuts();
 
     // If a hint calculation was requested, poll engine for bestmove and capture it
-    if (m_engineMode == EngineMode::Hint_Calculating)
-    {
-        std::string best;
-        if (m_engine.checkBestMove(best))
-        {
-            // Store hint and return engine to idle
-            m_hintMove = best;
-            m_engineMode = EngineMode::Idle;
-        }
-    }
+    pollHintCalculation();
 
-    // Also support restart via R key (for convenience) -> start a new match
-    if (IsKeyPressed(KEY_R))
-    {
-        startMatch();
-    }
-
-    // Promotion handling
+    // Promotion or board click handling
     if (m_board.isAwaitingPromotion())
     {
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-        {
-            Vector2 mp = GetMousePosition();
-            const int ICON_SIZE = 64;
-            const int PAD = 12;
-            const int COUNT = 4;
-            int totalW = COUNT * ICON_SIZE + (COUNT - 1) * PAD;
-            int startX = (m_windowWidth - totalW) / 2;
-            int y = (m_windowHeight - ICON_SIZE) / 2;
-
-            for (int i = 0; i < COUNT; ++i)
-            {
-                int x = startX + i * (ICON_SIZE + PAD);
-                Rectangle rect = { (float)x, (float)y, (float)ICON_SIZE, (float)ICON_SIZE };
-                if (CheckCollisionPointRec(mp, rect))
-                {
-                    PieceType choice = PieceType::Queen;
-                    switch (i)
-                    {
-                    case 0: choice = PieceType::Queen; break;
-                    case 1: choice = PieceType::Rook; break;
-                    case 2: choice = PieceType::Bishop; break;
-                    case 3: choice = PieceType::Knight; break;
-                    }
-                    Board::MoveResult pres = m_board.completePromotion(choice);
-                        if (pres == Board::MoveResult::Promotion)
-                    {
-                        if (m_audioEnabled) PlaySound(m_sndPromote);
-                        auto last = m_board.getLastMove();
-                        if (last.has_value())
-                        {
-                            std::string san = m_board.moveToSAN(last.value());
-                            m_board.setLastMoveSAN(san);
-                            std::cout << "Move played: " << san << std::endl;
-                        }
-                        std::cout << "FEN: " << m_board.getFEN() << std::endl;
-                        std::cout << "PGN: " << m_board.getFullPGNText() << std::endl;
-                        std::cout << "-------------------" << std::endl;
-                    }
-                    m_selected.reset();
-                    break;
-                }
-            }
-        }
+        handlePromotionClick();
     }
     else if (m_gameStarted && m_board.getGameState() == Board::GameState::Active && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
     {
         Vector2 mp = GetMousePosition();
-        int boardPixelSize = m_tileSize * Board::Tiles;
-        int availableWidth = m_windowWidth - m_sidebarWidth;
-        int originX = (availableWidth - boardPixelSize) / 2;
-        int originY = (m_windowHeight - boardPixelSize) / 2;
-
-        float localX = mp.x - originX;
-        float localY = mp.y - originY;
-
-        if (localX >= 0 && localY >= 0 && localX < boardPixelSize && localY < boardPixelSize)
-        {
-            // Only allow human input when it's the human's turn (map PlayerColor -> PieceColor)
-            PieceColor humanPieceColor = (m_playerColor == PlayerColor::White) ? PieceColor::White : PieceColor::Black;
-            if (m_board.getCurrentTurn() == humanPieceColor)
-            {
-                int col = (int)(localX / m_tileSize);
-                int row = (int)(localY / m_tileSize);
-                // If the human chose Black, flip coordinates to match rotated board view
-                if (m_playerColor == PlayerColor::Black)
-                {
-                    col = Board::Tiles - 1 - col;
-                    row = Board::Tiles - 1 - row;
-                }
-
-                if (!m_selected.has_value())
-                {
-                    if (m_board.at(row, col) != nullptr)
-                        m_selected = std::make_pair(row, col);
-                }
-                else
-                {
-                    auto [sr, sc] = m_selected.value();
-                    if (sr == row && sc == col)
-                    {
-                        m_selected.reset();
-                    }
-                    else
-                    {
-                        // Trigger animation (renderer expects X=col, Y=row) before applying the move
-                        const Piece* moving = m_board.at(sr, sc);
-                        if (moving && m_renderer)
-                        {
-                            std::string ak = moving->assetKey();
-                            if (ak.size() >= 2)
-                            {
-                                // Detect castling: king moves two columns horizontally
-                                bool isCastle = false;
-                                int secFromX = -1, secToX = -1;
-                                char secPieceChar = 'r';
-                                if (moving->type() == PieceType::King && std::abs(col - sc) == 2)
-                                {
-                                    isCastle = true;
-                                    if (col > sc)
-                                    {
-                                        // King-side castle: rook moves from the h-file to f-file
-                                        secFromX = sc + 3; // typically 7
-                                        secToX = sc + 1;   // typically 5
-                                    }
-                                    else
-                                    {
-                                        // Queen-side castle: rook moves from the a-file to d-file
-                                        secFromX = sc - 4; // typically 0
-                                        secToX = sc - 1;   // typically 3
-                                    }
-                                }
-
-                                m_renderer->triggerMoveAnimation(sc, sr, col, row, ak[0], ak[1], isCastle, secFromX, secToX, secPieceChar);
-                            }
-                        }
-
-                        Board::MoveResult res = m_board.movePiece(sr, sc, row, col);
-                        if (res != Board::MoveResult::Invalid)
-                        {
-                            m_selected.reset();
-                            // Clear any active hint immediately when a human move is executed
-                            clearActiveHint();
-                            m_isReviewingHistory = false;
-
-                            if (res == Board::MoveResult::Check)
-                            {
-                                if (m_audioEnabled) PlaySound(m_sndMoveCheck);
-                            }
-                            else if (res == Board::MoveResult::Castle)
-                            {
-                                if (m_audioEnabled) PlaySound(m_sndCastle);
-                            }
-                            else if (res == Board::MoveResult::Capture)
-                            {
-                                if (m_audioEnabled) PlaySound(m_sndCapture);
-                            }
-                            else if (res == Board::MoveResult::Promotion)
-                            {
-                                // wait for promotion choice
-                            }
-                            else
-                            {
-                                if (m_audioEnabled) PlaySound(m_sndMoveSelf);
-                            }
-
-                            if (res != Board::MoveResult::Promotion)
-                            {
-                                auto last = m_board.getLastMove();
-                                if (last.has_value())
-                                {
-                                    std::string san = m_board.moveToSAN(last.value());
-                                    m_board.setLastMoveSAN(san);
-                                }
-                                std::cout << "FEN: " << m_board.getFEN() << std::endl;
-                                std::cout << "PGN: " << m_board.getFullPGNText() << std::endl;
-                                std::cout << "-------------------" << std::endl;
-                                // Record evaluation for this new position
-                                float eval = m_engine.getEvaluation();
-                                // Truncate any redo history if we were viewing past moves
-                                if (m_historyIndex + 1 < m_evaluationHistory.size())
-                                {
-                                    m_evaluationHistory.resize(m_historyIndex + 1);
-                                }
-                                m_evaluationHistory.push_back(eval);
-                                m_historyIndex = m_evaluationHistory.size() - 1;
-                            }
-                        }
-                        else
-                        {
-                            m_moveMessage = m_board.getLastMoveError();
-                            if (m_moveMessage.empty()) m_moveMessage = "Illegal move";
-                            m_messageTimer = 2.5f;
-                            std::printf("Move failed: %s\n", m_moveMessage.c_str());
-
-                            if (m_board.at(row, col) != nullptr)
-                                m_selected = std::make_pair(row, col);
-                            else
-                                m_selected.reset();
-                        }
-                    }
-                }
-            }
-        }
-        else
-        {
-            m_selected.reset();
-        }
+        handleBoardClick(mp);
     }
 
-    // AI trigger: only consider starting AI when a match is running and the engine is idle.
-    // Strict guard prevents AI from being triggered by stray state changes in the lobby.
-    if (!m_gameStarted || m_engineMode != EngineMode::Idle)
-    {
-        // Do nothing: AI must not be started when no game is active or engine already busy
-    }
-    else
-    {
-        // Existing logic: start engine search for AI move when it's the opponent's turn
-        if (m_board.getGameState() == Board::GameState::Active &&
-            !m_isReviewingHistory &&
-            // If it's not the human's piece color, let the engine think
-            (m_board.getCurrentTurn() != ((m_playerColor == PlayerColor::White) ? PieceColor::White : PieceColor::Black)))
-        {
-            m_engineMode = EngineMode::AI_Thinking;
-            std::string currentFen = m_board.getFEN();
-            m_engine.startSearch(currentFen, 1000);
-        }
-    }
+    // Possibly trigger AI thinking when appropriate
+    maybeTriggerAI();
 
-    // AI polling: when engine is thinking for an AI move, check for bestmove
-    if (m_engineMode == EngineMode::AI_Thinking)
-    {
-        std::string bestMove;
-        if (m_engine.checkBestMove(bestMove))
-        {
-            Board::ChessMove engineMove = m_board.parseEngineMove(bestMove);
-            // Trigger animation (renderer expects X=col, Y=row) before applying the move
-            const Piece* moving = m_board.at(engineMove.r1, engineMove.c1);
-            if (moving && m_renderer)
-            {
-                std::string ak = moving->assetKey();
-                if (ak.size() >= 2)
-                    m_renderer->triggerMoveAnimation(engineMove.c1, engineMove.r1, engineMove.c2, engineMove.r2, ak[0], ak[1]);
-            }
-            Board::MoveResult res = m_board.movePiece(engineMove.r1, engineMove.c1, engineMove.r2, engineMove.c2);
-
-            if (res != Board::MoveResult::Invalid)
-            {
-                if (res == Board::MoveResult::Check)
-                {
-                    if (m_audioEnabled) PlaySound(m_sndMoveCheck);
-                }
-                else if (res == Board::MoveResult::Castle)
-                {
-                    if (m_audioEnabled) PlaySound(m_sndCastle);
-                }
-                else if (res == Board::MoveResult::Capture)
-                {
-                    if (m_audioEnabled) PlaySound(m_sndCapture);
-                }
-                else if (res == Board::MoveResult::Promotion)
-                {
-                    if (bestMove.length() == 5)
-                    {
-                        char promotionChar = bestMove[4];
-                        PieceType chosenType = PieceType::Queen;
-                        switch (promotionChar)
-                        {
-                        case 'q': chosenType = PieceType::Queen; break;
-                        case 'r': chosenType = PieceType::Rook; break;
-                        case 'b': chosenType = PieceType::Bishop; break;
-                        case 'n': chosenType = PieceType::Knight; break;
-                        }
-                        m_board.completePromotion(chosenType);
-                        if (m_audioEnabled) PlaySound(m_sndPromote);
-                    }
-                }
-                else
-                {
-                    if (m_audioEnabled) PlaySound(m_sndMoveSelf);
-                }
-
-                if (res != Board::MoveResult::Promotion)
-                {
-                    auto last = m_board.getLastMove();
-                    if (last.has_value())
-                    {
-                        std::string san = m_board.moveToSAN(last.value());
-                        m_board.setLastMoveSAN(san);
-                        std::cout << "AI Move: " << san << std::endl;
-                    }
-                }
-                else
-                {
-                    auto last = m_board.getLastMove();
-                    if (last.has_value())
-                    {
-                        std::string san = m_board.moveToSAN(last.value());
-                        m_board.setLastMoveSAN(san);
-                        std::cout << "AI Move (Promotion): " << san << std::endl;
-                    }
-                }
-
-                std::cout << "FEN: " << m_board.getFEN() << std::endl;
-                std::cout << "PGN: " << m_board.getFullPGNText() << std::endl;
-                std::cout << "-------------------" << std::endl;
-            }
-
-                // Record evaluation after AI move
-                float eval = m_engine.getEvaluation();
-                if (m_historyIndex + 1 < m_evaluationHistory.size())
-                {
-                    m_evaluationHistory.resize(m_historyIndex + 1);
-                }
-                m_evaluationHistory.push_back(eval);
-                m_historyIndex = m_evaluationHistory.size() - 1;
-
-                m_engineMode = EngineMode::Idle;
-                std::cout << "Evaluation of move: " << eval << std::endl;
-        }
-    }
+    // Poll engine for completed AI move if necessary
+    pollEngineForBestMove();
 
     // Decrement message timer
     if (m_messageTimer > 0.0f)

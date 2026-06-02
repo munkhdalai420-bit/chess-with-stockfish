@@ -328,30 +328,6 @@
     <ClCompile Include="src\Piece.cpp" />
     <ClCompile Include="src\Renderer.cpp" />
   </ItemGroup>
-  <ItemGroup>
-    <Image Include="..\..\Chess_bdt45.png" />
-    <Image Include="..\..\Chess_blt45.png" />
-    <Image Include="..\..\Chess_kdt45.png" />
-    <Image Include="..\..\Chess_klt45.png" />
-    <Image Include="..\..\Chess_ndt45.png" />
-    <Image Include="..\..\Chess_nlt45.png" />
-    <Image Include="..\..\Chess_pdt45.png" />
-    <Image Include="..\..\Chess_plt45.png" />
-    <Image Include="..\..\Chess_qdt45.png" />
-    <Image Include="..\..\Chess_qlt45.png" />
-    <Image Include="..\..\Chess_rdt45.png" />
-    <Image Include="..\..\Chess_rlt45.png" />
-  </ItemGroup>
-  <ItemGroup>
-    <Media Include="resources\capture.mp3" />
-    <Media Include="resources\castle.mp3" />
-    <Media Include="resources\move-check.mp3" />
-    <Media Include="resources\move-self.mp3" />
-    <Media Include="resources\promote.mp3" />
-  </ItemGroup>
-  <ItemGroup>
-    <Font Include="resources\futura_font.ttf" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

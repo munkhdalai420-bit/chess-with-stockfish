@@ -216,7 +216,7 @@ bool Renderer::loadTextures()
     return true;
 }
 
-void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller)
+void Renderer::render(const Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller)
 {
     // Update flip state from controller (true when human chose Black)
     m_flip = (controller.getPlayerColor() == GameController::PlayerColor::Black);
@@ -245,7 +245,7 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     }
 
     // If Disco mode is active, we let drawBoard pick colors dynamically based on time.
-    drawBoard(board, selected, &controller);
+    drawBoard(board, selected, controller);
 
     // Move hint overlays: show legal destinations for the currently selected piece
     if (selected.has_value())
@@ -366,7 +366,7 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     const Color textCol = { 220, 220, 220, 255 };
 
     // Draw status (White's Turn / Black's Turn) at the top of the sidebar
-    const int STATUS_FONT_SIZE = 22;
+    const int STATUS_FONT_SIZE = 24;
     const Color statusColor = WHITE;
     Board::GameState gs = board.getGameState();
     std::string status;
@@ -393,7 +393,7 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
 
     // Controls area directly under the status
     const float CTRL_Y = (float)(sy + STATUS_FONT_SIZE + 8);
-    const float ctrlPad = 8.0f;
+    const float ctrlPad = 15.0f;
     const float ctrlW = (float)(panelW - padding * 2);
     const float ctrlH = 36.0f;
     const float ctrlX = (float)(panelX + padding);
@@ -416,15 +416,15 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
         if (!canChangeDifficulty)
         {
             DrawRectangleRec(eloRect, Fade(GRAY, 0.4f));
-            std::string eloText = std::string("ELO: ") + std::to_string(controller.getTargetElo()) + " Elo";
-            DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 6 }, (float)ELO_FONT, 0.0f, Fade(WHITE, 0.6f));
+            std::string eloText = std::string("ELO:") + std::to_string(controller.getTargetElo()) + " Elo";
+            DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 10 }, (float)ELO_FONT, 0.0f, Fade(WHITE, 0.6f));
         }
         else
         {
             bool hoverElo = CheckCollisionPointRec(mousePos, eloRect);
             DrawRectangleRec(eloRect, hoverElo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f));
-            std::string eloText = std::string("ELO: ") + std::to_string(controller.getTargetElo()) + " Elo";
-            DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
+            std::string eloText = std::string("ELO:") + std::to_string(controller.getTargetElo()) + " Elo";
+            DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 10 }, (float)ELO_FONT, 0.0f, WHITE);
             if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && hoverElo)
             {
                 controller.cycleTargetElo();
@@ -440,13 +440,13 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
         if (!canSwitch)
         {
             DrawRectangleRec(sideRect, Fade(GRAY, 0.3f));
-            DrawTextEx(m_mainFont, sideLabel, { sideRect.x + 8, sideRect.y + 6 }, (float)ELO_FONT, 0.0f, Fade(WHITE, 0.6f));
+            DrawTextEx(m_mainFont, sideLabel, { sideRect.x + 8, sideRect.y + 10 }, (float)ELO_FONT, 0.0f, Fade(WHITE, 0.6f));
         }
         else
         {
             bool hoverSide = CheckCollisionPointRec(mousePos, sideRect);
             DrawRectangleRec(sideRect, hoverSide ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f));
-            DrawTextEx(m_mainFont, sideLabel, { sideRect.x + 8, sideRect.y + 6 }, (float)ELO_FONT, 0.0f, WHITE);
+            DrawTextEx(m_mainFont, sideLabel, { sideRect.x + 8, sideRect.y + 10 }, (float)ELO_FONT, 0.0f, WHITE);
             if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && hoverSide)
             {
                 controller.togglePlayerColor();
@@ -486,17 +486,17 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
         DrawRectangleRec(hintRect, canHintBtn ? (hoverHint ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.2f));
 
         // Labels
-        const char* startLabel = matchStarted ? "END" : "START";
+        const char* startLabel = matchStarted ? " END " : "START";
         const int BTN_FONT = 22;
         // Undo label "<"
         DrawTextEx(m_mainFont, "<", { undoRect.x + undoRect.width/2 - MeasureTextEx(m_mainFont, "<", (float)BTN_FONT, 0).x/2, undoRect.y + (undoRect.height - BTN_FONT)/2 }, (float)BTN_FONT, 0.0f, canUndoBtn ? WHITE : Fade(WHITE, 0.4f));
         // Start/End label
-        DrawTextEx(m_mainFont, startLabel, { startRect.x + 45, startRect.y + (startRect.height - BTN_FONT)/2 }, (float)BTN_FONT, 0.0f, WHITE);
+        DrawTextEx(m_mainFont, startLabel, { startRect.x + 38, startRect.y + (startRect.height - BTN_FONT)/2 + 2 }, (float)BTN_FONT, 0.0f, WHITE);
         // Redo label ">"
         DrawTextEx(m_mainFont, ">", { redoRect.x + redoRect.width/2 - MeasureTextEx(m_mainFont, ">", (float)BTN_FONT, 0).x/2, redoRect.y + (redoRect.height - BTN_FONT)/2 }, (float)BTN_FONT, 0.0f, canRedoBtn ? WHITE : Fade(WHITE, 0.4f));
 
         // Hint icon label: try emoji, fallback to yellow circle
-        const char* hintLabel = "💡";
+        const char* hintLabel = "?";
         float hintTextW = MeasureTextEx(m_mainFont, hintLabel, 20.0f, 0).x;
         if (hintTextW > 0.0f)
         {
@@ -687,7 +687,7 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
         DrawRectangleRec(m_animCheckboxBounds, m_animatePieces ? Fade(RED, 0.95f) : Fade(WHITE, 0.15f));
         DrawRectangleLines((int)cbX, (int)cbY, (int)cbSize, (int)cbSize, Fade(WHITE, 0.6f));
         // label
-        DrawTextEx(m_mainFont, "Animation", Vector2{ themeRect.x + boxW + 12.0f + cbSize + 8.0f, themeRect.y + 4.0f }, 16.0f, 0.0f, WHITE);
+        DrawTextEx(m_mainFont, "Animation", Vector2{ themeRect.x + boxW + 20.0f + cbSize, themeRect.y + 8.0f }, 16.0f, 0.0f, WHITE);
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
         {
             Vector2 mp2 = GetMousePosition();
@@ -762,7 +762,7 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
     }
 }
 
-void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& selected, const GameController* controller) const
+void Renderer::drawBoard(const Board& board, const std::optional<std::pair<int,int>>& selected, const GameController& controller) const
 {
     // Colors for the board
     // Select colors based on the currently selected theme
@@ -846,9 +846,8 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
     Rectangle rec = { m_boardOriginX, m_boardOriginY, m_tileSize * 8, m_tileSize * 8 };
     DrawRectangleLinesEx(rec, 2, WHITE);
 
-    if (controller)
     {
-        std::string hint = controller->getHintMove();
+        std::string hint = controller.getHintMove();
         if (!hint.empty())
         {
             // Expect at least 4 characters: e.g., e2e4
@@ -956,7 +955,7 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
     }
 }
 
-void Renderer::drawPieces(Board& board)
+void Renderer::drawPieces(const Board& board)
 {
     // Draw static pieces, but skip the destination tile of an active animation so we can draw
     // the moving piece separately and avoid duplication.

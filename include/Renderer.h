@@ -26,8 +26,12 @@ public:
 
     // Render the board and pieces. 'selected' is an optional board coordinate {row, col}
     // 'evaluation' is a signed value (positive = White advantage) corresponding
-    // to the currently displayed history index.
-    void render(Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller);
+    // to the currently displayed history index. Accept only const references to
+    // indicate the Renderer will not mutate game state.
+    // Renderer will issue UI commands on the controller (undo/start/redo/etc.),
+    // so render accepts a non-const reference for those interactions while keeping
+    // the board parameter const to avoid mutation by the renderer.
+    void render(const Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller);
     // Trigger a move animation (from tile X/Y to tile X/Y). X==col, Y==row
     // Optional parameters allow a secondary piece (rook) to be animated alongside
     // the primary piece (used for castling).
@@ -51,8 +55,8 @@ private:
     std::string textureFilenameForKey(const std::string& key) const;
     const Texture2D* textureForKey(const std::string& key) const;
 
-    void drawBoard(Board& board, const std::optional<std::pair<int,int>>& selected, const GameController* controller) const;
-    void drawPieces(Board& board);
+    void drawBoard(const Board& board, const std::optional<std::pair<int,int>>& selected, const GameController& controller) const;
+    void drawPieces(const Board& board);
     // Cycle the visual theme (used by UI)
     void cycleTheme();
     // Helpers

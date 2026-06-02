@@ -840,41 +840,17 @@ Board::MoveResult Board::movePiece(int startRow, int startCol, int endRow, int e
     return MoveResult::Normal;
 }
 
-bool Board::wouldMoveBeLegal(int startRow, int startCol, int endRow, int endCol)
+bool Board::wouldMoveBeLegal(int startRow, int startCol, int endRow, int endCol) const
 {
     // Save internal mutable state
-    auto savedHistory = m_moveHistory;
-    auto savedRedo = m_redoStack;
-    auto savedEnPassant = m_enPassantTarget;
-    auto savedTurn = m_currentTurn;
-    auto savedLastError = m_lastMoveError;
-    bool savedAwaiting = m_isAwaitingPromotion;
-    auto savedPending = m_pendingPromotionSquare;
-    uint8_t savedCastling = m_castlingRights;
-
-    const Piece* p = at(startRow, startCol);
+    // Implementation cannot modify member state because this method is const.
+    // Use a temporary board reconstructed from FEN to simulate the move.
+    Board tmp;
+    if (!tmp.loadFromFEN(this->getFEN())) return false;
+    const Piece* p = tmp.at(startRow, startCol);
     if (!p) return false;
-
-    // Ensure movePiece sees the correct turn for the mover
-    m_currentTurn = p->color();
-
-    MoveResult res = movePiece(startRow, startCol, endRow, endCol);
-    if (res != MoveResult::Invalid)
-    {
-        // Undo the simulated move
-        undoMove();
-    }
-
-    // Restore saved state to avoid any side-effects
-    m_moveHistory = savedHistory;
-    m_redoStack = savedRedo;
-    m_enPassantTarget = savedEnPassant;
-    m_currentTurn = savedTurn;
-    m_lastMoveError = savedLastError;
-    m_isAwaitingPromotion = savedAwaiting;
-    m_pendingPromotionSquare = savedPending;
-    m_castlingRights = savedCastling;
-
+    tmp.setLastMoveSAN(""); // no-op but keeps parity with non-const flow
+    MoveResult res = tmp.movePiece(startRow, startCol, endRow, endCol);
     return (res != MoveResult::Invalid);
 }
 
