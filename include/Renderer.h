@@ -12,7 +12,7 @@ class GameController;
 class Renderer
 {
 public:
-    enum class BoardTheme { Classic, Wood, Ocean, Grass, Disco };
+    enum class BoardTheme { Wood, Grass, Ocean, Classic, Disco };
 
     Renderer(int windowWidth, int windowHeight, int tileSize);
     ~Renderer();
@@ -45,7 +45,7 @@ private:
 
     std::unordered_map<std::string, Texture2D> m_textures; // key like "kl" => texture (e.g. "kl" == white king)
     Font m_mainFont; // custom font used for UI text (loaded at runtime)
-    BoardTheme m_theme = BoardTheme::Ocean;
+    BoardTheme m_theme = BoardTheme::Wood;
     int m_themeIndex = 2; // 0=Grass,1=Wood,2=Ocean,3=Classic (default Ocean)
 
     std::string textureFilenameForKey(const std::string& key) const;

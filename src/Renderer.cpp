@@ -94,7 +94,7 @@ void Renderer::setTheme(BoardTheme theme)
         case BoardTheme::Ocean: m_themeIndex = 2; break;
         case BoardTheme::Classic: m_themeIndex = 3; break;
         case BoardTheme::Disco: m_themeIndex = 4; break;
-        default: m_themeIndex = 2; break;
+        default: m_themeIndex = 1; break;
     }
 }
 
@@ -491,7 +491,7 @@ void Renderer::render(Board& board, const std::optional<std::pair<int,int>>& sel
         // Undo label "<"
         DrawTextEx(m_mainFont, "<", { undoRect.x + undoRect.width/2 - MeasureTextEx(m_mainFont, "<", (float)BTN_FONT, 0).x/2, undoRect.y + (undoRect.height - BTN_FONT)/2 }, (float)BTN_FONT, 0.0f, canUndoBtn ? WHITE : Fade(WHITE, 0.4f));
         // Start/End label
-        DrawTextEx(m_mainFont, startLabel, { startRect.x + 12, startRect.y + (startRect.height - BTN_FONT)/2 }, (float)BTN_FONT, 0.0f, WHITE);
+        DrawTextEx(m_mainFont, startLabel, { startRect.x + 45, startRect.y + (startRect.height - BTN_FONT)/2 }, (float)BTN_FONT, 0.0f, WHITE);
         // Redo label ">"
         DrawTextEx(m_mainFont, ">", { redoRect.x + redoRect.width/2 - MeasureTextEx(m_mainFont, ">", (float)BTN_FONT, 0).x/2, redoRect.y + (redoRect.height - BTN_FONT)/2 }, (float)BTN_FONT, 0.0f, canRedoBtn ? WHITE : Fade(WHITE, 0.4f));
 
@@ -925,7 +925,7 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
     for (int r = 0; r < Board::Tiles; ++r)
     {
         // Top->bottom: if not flipped, ranks are 8..1; if flipped, ranks are 1..8
-        int rankNum = m_flip ? (r + 1) : (Board::Tiles - r);
+        int rankNum = (8 - r);
         std::string rankStr = std::to_string(rankNum);
 
         // Determine tile color at the leftmost screen file for this rank
@@ -933,7 +933,7 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
         const Color textColor = isLight ? darkColor : lightColor;
 
         int textW = (int)MeasureTextEx(m_mainFont, rankStr.c_str(), (float)SMALL_FONT, 0.0f).x;
-        int x = tileLeft(leftLogicalCol) + (m_flip ? (m_tileSize - PADDING - textW) : PADDING);
+        int x = tileLeft(leftLogicalCol) + PADDING;
         int y = tileTop(r) + PADDING;
         DrawTextEx(m_mainFont, rankStr.c_str(), { (float)x, (float)y }, (float)SMALL_FONT, 0.0f, textColor);
     }
@@ -943,15 +943,15 @@ void Renderer::drawBoard(Board& board, const std::optional<std::pair<int,int>>& 
     for (int c = 0; c < Board::Tiles; ++c)
     {
         // Files left->right: if not flipped, a..h; if flipped, h..a
-        char fileChar = m_flip ? (char)('h' - c) : (char)('a' + c);
+        char fileChar = (char)('a' + c);
         char fileStr[2] = { fileChar, '\0' };
 
         bool isLight = ((bottomLogicalRow + c) % 2) == 0;
         const Color textColor = isLight ? darkColor : lightColor;
 
         int textW = (int)MeasureTextEx(m_mainFont, fileStr, (float)SMALL_FONT, 0.0f).x;
-        int x = tileLeft(c) + (m_flip ? PADDING : (m_tileSize - textW - PADDING));
-        int y = tileTop(bottomLogicalRow) + (m_flip ? PADDING : (m_tileSize - SMALL_FONT - PADDING / 2));
+        int x = tileLeft(c) + m_tileSize - textW - PADDING;
+        int y = tileTop(bottomLogicalRow) + m_tileSize - SMALL_FONT - PADDING / 2;
         DrawTextEx(m_mainFont, fileStr, { (float)x, (float)y }, (float)SMALL_FONT, 0.0f, textColor);
     }
 }
