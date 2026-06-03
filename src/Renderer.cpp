@@ -417,6 +417,9 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
         }
         // Border
         DrawRectangleLines(barX, barY, BAR_W, barH, WHITE);
+		DrawLine(barX, barY+(m_boardPixelSize*0.25), barX + BAR_W, barY + (m_boardPixelSize * 0.25), GRAY);
+        DrawLine(barX, barY + (m_boardPixelSize * 0.50), barX + BAR_W, barY + (m_boardPixelSize * 0.50), GRAY);
+        DrawLine(barX, barY + (m_boardPixelSize * 0.75), barX + BAR_W, barY + (m_boardPixelSize * 0.75), GRAY);
     }
     // Draw move history sidebar on the right
     const int panelX = m_windowWidth - m_sidebarWidth;
