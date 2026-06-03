@@ -81,6 +81,12 @@ Renderer::Renderer(int windowWidth, int windowHeight, int tileSize)
         m_mainFont = GetFontDefault();
     }
 
+    // Enable bilinear filtering for the font texture to reduce jagged text on HiDPI displays
+    if (m_mainFont.texture.id != 0)
+    {
+        SetTextureFilter(m_mainFont.texture, TEXTURE_FILTER_BILINEAR);
+    }
+
 }
 
 void Renderer::setTheme(BoardTheme theme)
@@ -201,6 +207,9 @@ bool Renderer::loadTextures()
                 continue;
             }
 
+            // Ensure bilinear filtering for all piece textures to avoid pixelation/jagged edges
+            SetTextureFilter(tex, TEXTURE_FILTER_BILINEAR);
+
             m_textures.emplace(key, tex);
         }
     }
@@ -211,6 +220,12 @@ bool Renderer::loadTextures()
         std::printf("Error: %zu texture(s) failed to load. Required piece textures are missing.\n", missingFiles.size());
         for (const auto &f : missingFiles) std::printf("  Missing: %s\n", f.c_str());
         return false;
+    }
+
+    // Reinforce filter state on stored textures (in case copies exist in the map)
+    for (auto &kv : m_textures)
+    {
+        SetTextureFilter(kv.second, TEXTURE_FILTER_BILINEAR);
     }
 
     return true;
@@ -292,6 +307,32 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
     }
 
     drawPieces(board);
+
+    // If in post-match review and we are viewing the final position, display a conspicuous
+    // text banner above the board. Do NOT draw anything over the board squares. The banner
+    // should only appear when there are no redos available (i.e., we are at the end of the timeline).
+    if (controller.isMatchEnded() && !controller.canRedo())
+    {
+        Board::GameState ovGs = board.getGameState();
+        std::string ovStatus;
+        if (ovGs == Board::GameState::Checkmate)
+        {
+            PieceColor winner = (board.getCurrentTurn() == PieceColor::White) ? PieceColor::Black : PieceColor::White;
+            ovStatus = std::string("") + (winner == PieceColor::White ? "White Victory" : "Black Victory") + " - Post-Match Review Mode";
+        }
+        else
+        {
+            ovStatus = "Draw — Post-Match Review Mode";
+        }
+        const int OVL_FONT = 20;
+        int textW = (int)MeasureTextEx(m_mainFont, ovStatus.c_str(), (float)OVL_FONT, 0.0f).x;
+        float textX = (float)(m_boardOriginX + (m_boardPixelSize - textW) / 2);
+        float textY = (float)(m_boardOriginY - 40);
+        if (textY < 6.0f) textY = 6.0f; // keep inside window
+        // subtle shadow for contrast (drawn slightly above board, not overlapping tiles)
+        DrawTextEx(m_mainFont, ovStatus.c_str(), { textX + 1.0f, textY + 1.0f }, (float)OVL_FONT, 0.0f, Fade(BLACK, 0.6f));
+        DrawTextEx(m_mainFont, ovStatus.c_str(), { textX, textY }, (float)OVL_FONT, 0.0f, WHITE);
+    }
 
     // Evaluation bar to the left of the board: white fills from bottom, black from top.
     {
@@ -403,15 +444,17 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
     // Unified controls area: Elo selector occupies left half, Side toggle occupies right half.
     {
         Vector2 mousePos = GetMousePosition();
-        bool matchStarted = controller.isMatchStarted();
+        bool isReviewMode = controller.isMatchEnded();
+        bool isLiveMatch = controller.isMatchStarted() && !isReviewMode;
+        bool isLobby = !controller.isMatchStarted() && !isReviewMode;
 
         const float midGap = 8.0f;
         float btnW = (ctrlW - midGap) * 0.5f;
         Rectangle eloRect = { ctrlX, CTRL_Y, btnW, ctrlH };
         Rectangle sideRect = { ctrlX + btnW + midGap, CTRL_Y, btnW, ctrlH };
 
-        // Elo selector: allow changing only when no match is running
-        bool canChangeDifficulty = !controller.isMatchStarted();
+        // Elo selector: allow changing only in lobby
+        bool canChangeDifficulty = isLobby;
         if (!canChangeDifficulty)
         {
             DrawRectangleRounded(eloRect, 0.2f, 6, Fade(GRAY, 0.4f));
@@ -430,10 +473,10 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
             }
         }
 
-        // Side toggle button: shows chosen side. Interactive only pre-game and when engine is idle.
+        // Side toggle button: shows chosen side. Interactive only in lobby and when engine is idle.
         GameController::PlayerColor pc = controller.getPlayerColor();
         const char* sideLabel = (pc == GameController::PlayerColor::White) ? "Side: White" : "Side: Black";
-        bool canSwitch = (!controller.isMatchStarted() && controller.isEngineIdle());
+        bool canSwitch = (isLobby && controller.isEngineIdle());
 
         // Draw faded when switching is not allowed; avoid any mouse checks when disabled so it's physically unclickable
         if (!canSwitch)
@@ -467,7 +510,7 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
         Rectangle redoRect = { startRect.x + middleBtnWidth + gap, rowY, iconBtnWidth, buttonHeight };
         Rectangle hintRect = { redoRect.x + iconBtnWidth + gap, rowY, iconBtnWidth, buttonHeight };
 
-        bool enabledGlobal = controller.isMatchStarted();
+        bool enabledGlobal = isLiveMatch || isReviewMode; // allow undo/redo in review mode as well
         bool canUndoBtn = enabledGlobal && controller.canUndo();
         bool canRedoBtn = enabledGlobal && controller.canRedo();
         bool canHintBtn = controller.canRequestHint();
@@ -485,7 +528,7 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
         DrawRectangleRounded(hintRect, 0.6f, 6, canHintBtn ? (hoverHint ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.2f));
 
         // Labels
-        const char* startLabel = matchStarted ? " END " : "START";
+        const char* startLabel = isLobby ? "START" : (isLiveMatch ? " END " : "EXIT");
         const int BTN_FONT = 22;
         // Undo label "<"
         DrawTextEx(m_mainFont, "<", { undoRect.x + undoRect.width/2 - MeasureTextEx(m_mainFont, "<", (float)BTN_FONT, 0).x/2, undoRect.y + (undoRect.height - BTN_FONT)/2 }, (float)BTN_FONT, 0.0f, canUndoBtn ? WHITE : Fade(WHITE, 0.4f));
@@ -514,7 +557,9 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
             if (hoverUndo && canUndoBtn) controller.undo();
             else if (hoverStart)
             {
-                if (matchStarted) controller.endMatch(); else controller.startMatch();
+                if (isLobby) controller.startMatch();
+                else if (isLiveMatch) controller.endMatch();
+                else if (isReviewMode) controller.endMatch(); // Exit Review -> same as endMatch to return to lobby
             }
             else if (hoverRedo && canRedoBtn) controller.redo();
             else if (hoverHint && canHintBtn) controller.requestHint();
@@ -679,45 +724,49 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
             cycleTheme();
         }
 
-        // Animation toggle checkbox to the right of the theme button
-        const float cbSize = 20.0f;
-        float cbX = themeRect.x + boxW + 12.0f;
-        float cbY = themeRect.y + (boxH - cbSize) / 2.0f;
-        m_animCheckboxBounds = { cbX, cbY, cbSize, cbSize };
-        // checkbox background (rounded)
-        DrawRectangleRounded(m_animCheckboxBounds, 10.0f, 6, m_animatePieces ? Fade(RED, 0.95f) : Fade(WHITE, 0.15f));
-        // label
-        DrawTextEx(m_mainFont, "Animation", Vector2{ themeRect.x + boxW + 20.0f + cbSize, themeRect.y + 8.0f }, 16.0f, 0.0f, WHITE);
+        // Small Save / Load buttons (to the right of the theme button)
+        const float smallW = 47.0f;
+        const float smallGap = 8.0f;
+        Rectangle saveRect = { themeRect.x + boxW + 12.0f, themeRect.y, smallW, boxH };
+        Rectangle loadRect = { saveRect.x + smallW + smallGap, themeRect.y, smallW, boxH };
+        Vector2 mp2 = GetMousePosition();
+        // Determine UI mode for enabling/disabling these controls
+        bool isReviewMode = controller.isMatchEnded();
+        bool isLiveMatch = controller.isMatchStarted() && !isReviewMode;
+        bool isLobby = !controller.isMatchStarted() && !isReviewMode;
+        bool saveEnabled = isLiveMatch || isReviewMode;
+        bool loadEnabled = isLobby;
+
+        bool hoverSave = saveEnabled && CheckCollisionPointRec(mp2, saveRect);
+        bool hoverLoad = loadEnabled && CheckCollisionPointRec(mp2, loadRect);
+        DrawRectangleRounded(saveRect, 0.6f, 6, saveEnabled ? (hoverSave ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.3f));
+        DrawRectangleRounded(loadRect, 0.6f, 6, loadEnabled ? (hoverLoad ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.3f));
+        DrawTextEx(m_mainFont, "Save", Vector2{ saveRect.x + 8.0f, saveRect.y + 6.0f }, 16.0f, 0.0f, saveEnabled ? WHITE : Fade(WHITE, 0.6f));
+        DrawTextEx(m_mainFont, "Load", Vector2{ loadRect.x + 8.0f, loadRect.y + 6.0f }, 16.0f, 0.0f, loadEnabled ? WHITE : Fade(WHITE, 0.6f));
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
         {
-            Vector2 mp2 = GetMousePosition();
-            if (CheckCollisionPointRec(mp2, m_animCheckboxBounds))
+            Vector2 click = GetMousePosition();
+            if (saveEnabled && CheckCollisionPointRec(click, saveRect))
             {
-                m_animatePieces = !m_animatePieces;
-                if (!m_animatePieces) m_currentAnim.isActive = false; // stop any running animation
+                controller.saveLatestGame();
+            }
+            else if (loadEnabled && CheckCollisionPointRec(click, loadRect))
+            {
+                controller.loadLatestGame();
             }
         }
     }
 
-    // Game over overlay (checkmate or stalemate)
-    if (gs == Board::GameState::Checkmate || gs == Board::GameState::Stalemate)
-    {
-        // Full-screen translucent black
-        DrawRectangle(0, 0, m_windowWidth, m_windowHeight, {0,0,0,160});
-
-        // Centered message box
-        const int BOX_FONT = 36;
-        const int SUB_FONT = 20;
-        int boxW = MeasureText(status.c_str(), BOX_FONT) + 40;
-        int boxH = BOX_FONT + SUB_FONT + 36;
-        int bx = (m_windowWidth - boxW) / 2;
-        int by = (m_windowHeight - boxH) / 2;
-        DrawRectangle(bx, by, boxW, boxH, Fade(BLACK, 0.6f));
-        DrawTextEx(m_mainFont, status.c_str(), { (float)(bx + 20), (float)(by + 10) }, (float)BOX_FONT, 0.0f, WHITE);
-        const char* sub = "Press R to Restart";
-        int sw2 = (int)MeasureTextEx(m_mainFont, sub, (float)SUB_FONT, 0.0f).x;
-        DrawTextEx(m_mainFont, sub, { (float)((m_windowWidth - sw2) / 2), (float)(by + 10 + BOX_FONT + 8) }, (float)SUB_FONT, 0.0f, WHITE);
-    }
+    //// Game over: instead of a full-screen overlay, show result text in the sidebar so
+    //// the player can continue to use undo/redo and review the board beneath.
+    //if (gs == Board::GameState::Checkmate || gs == Board::GameState::Stalemate)
+    //{
+    //    // Re-use the already-built `status` string and draw it above the move history
+    //    const int RESULT_FONT = 18;
+    //    float resultX = (float)(panelX + padding);
+    //    float resultY = (float)(CTRL_Y + ctrlH * 2 + ctrlPad);
+    //    DrawTextEx(m_mainFont, status.c_str(), { resultX, resultY }, (float)RESULT_FONT, 0.0f, WHITE);
+    //}
 
     // Promotion overlay
     if (board.isAwaitingPromotion())

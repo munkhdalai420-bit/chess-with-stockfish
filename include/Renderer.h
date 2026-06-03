@@ -78,9 +78,8 @@ private:
         char secPieceChar = 'R';
     };
 
-    bool m_animatePieces = true;    // toggle for animations
+    bool m_animatePieces = true;    // animations are permanently enabled
     PieceAnimation m_currentAnim;
-    Rectangle m_animCheckboxBounds = { 0.0f, 0.0f, 0.0f, 0.0f }; // Initialized to avoid C26495
     // Vertical scroll offset for the move history panel (pixels)
     float m_historyScrollOffset = 0.0f;
     // Double-click tracking for move history (timestamp and last clicked line index)

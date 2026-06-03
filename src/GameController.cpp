@@ -1,6 +1,8 @@
 #include "GameController.h"
 
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <algorithm>
 #include <cmath>
 #include "Renderer.h"
@@ -158,6 +160,8 @@ bool GameController::screenToBoardCoords(const Vector2& mp, int& outRow, int& ou
 
 void GameController::handleBoardClick(const Vector2& mp)
 {
+    // If match has ended (post-match review), block new moves
+    if (m_matchEnded) { m_selected.reset(); return; }
     int row, col;
     if (!screenToBoardCoords(mp, row, col)) { m_selected.reset(); return; }
 
@@ -238,6 +242,7 @@ void GameController::handleBoardClick(const Vector2& mp)
 
 void GameController::maybeTriggerAI()
 {
+    if (m_matchEnded) return; // don't start AI thinking in post-match review
     if (!m_gameStarted || m_engineMode != EngineMode::Idle) return;
     if (m_board.getGameState() != Board::GameState::Active) return;
     if (m_isReviewingHistory) return;
@@ -352,6 +357,162 @@ void GameController::recordEvaluationForNewPosition()
     m_historyIndex = m_evaluationHistory.size() - 1;
 }
 
+// Save the latest game to a text file using simple line-based format:
+// line1: playerColor (0 = White, 1 = Black)
+// line2: space-separated UCI moves (e.g. e2e4 e7e5 ...)
+void GameController::saveLatestGame()
+{
+    std::ofstream ofs("latest_match.txt", std::ios::trunc);
+    if (!ofs)
+    {
+        std::printf("Error: unable to open latest_match.txt for writing\n");
+        return;
+    }
+
+    ofs << ((m_playerColor == PlayerColor::White) ? 0 : 1) << "\n";
+
+    // Build UCI move list from board move history
+    auto history = m_board.getMoveHistory();
+    bool first = true;
+    for (const auto &mv : history)
+    {
+        // Convert coordinates to UCI string: e.g., e2e4
+        char buf[8];
+        int c1 = mv.c1;
+        int r1 = mv.r1;
+        int c2 = mv.c2;
+        int r2 = mv.r2;
+        // file letters
+        char f1 = (char)('a' + c1);
+        char f2 = (char)('a' + c2);
+        // ranks: 1..8 (board row 7->1)
+        char rk1 = (char)('0' + (8 - r1));
+        char rk2 = (char)('0' + (8 - r2));
+        int n = 0;
+        buf[n++] = f1; buf[n++] = rk1; buf[n++] = f2; buf[n++] = rk2;
+        // If promotion recorded in history, append the promotion letter
+        if (mv.isPromotion && mv.promotionChoice.has_value())
+        {
+            char pch = 'q';
+            switch (mv.promotionChoice.value())
+            {
+            case PieceType::Queen: pch = 'q'; break;
+            case PieceType::Rook: pch = 'r'; break;
+            case PieceType::Bishop: pch = 'b'; break;
+            case PieceType::Knight: pch = 'n'; break;
+            default: pch = 'q'; break;
+            }
+            buf[n++] = pch;
+        }
+        std::string s(buf, buf + n);
+        if (!first) ofs << ' ';
+        ofs << s;
+        first = false;
+    }
+
+    ofs << "\n";
+    ofs.close();
+    std::printf("Saved latest game to latest_match.txt\n");
+}
+
+// Load latest game saved by saveLatestGame. Restores player color and replays UCI moves.
+void GameController::loadLatestGame()
+{
+    std::ifstream ifs("latest_match.txt");
+    if (!ifs)
+    {
+        std::printf("Error: unable to open latest_match.txt for reading\n");
+        return;
+    }
+
+    std::string line;
+    if (!std::getline(ifs, line)) { std::printf("latest_match.txt empty\n"); return; }
+    int pc = 0;
+    try { pc = std::stoi(line); } catch (...) { pc = 0; }
+    m_playerColor = (pc == 0) ? PlayerColor::White : PlayerColor::Black;
+
+    // Reset board to initial position
+    m_board = Board();
+    m_board.initializeStandardSetup();
+    m_selected.reset();
+    // Clear any active hint/search so loaded game doesn't show stale highlights
+    clearActiveHint();
+
+    if (!std::getline(ifs, line)) { std::printf("No moves found in latest_match.txt\n"); return; }
+    std::istringstream iss(line);
+    std::string tok;
+    while (iss >> tok)
+    {
+        if (tok.size() < 4) continue;
+        // Use parseEngineMove to get coordinates
+        Board::ChessMove cm = m_board.parseEngineMove(tok);
+        if (cm.r1 < 0 || cm.r1 >= Board::Tiles) continue;
+        // Handle promotion char if present
+        bool hasPromo = (tok.size() >= 5);
+        char promoChar = hasPromo ? tok[4] : '\0';
+
+        Board::MoveResult res = m_board.movePiece(cm.r1, cm.c1, cm.r2, cm.c2);
+        if (res != Board::MoveResult::Invalid)
+        {
+            // If promotion and a promo char was supplied, complete it now
+            if (res == Board::MoveResult::Promotion && hasPromo)
+            {
+                PieceType chosen = PieceType::Queen;
+                switch (promoChar)
+                {
+                case 'q': chosen = PieceType::Queen; break;
+                case 'r': chosen = PieceType::Rook; break;
+                case 'b': chosen = PieceType::Bishop; break;
+                case 'n': chosen = PieceType::Knight; break;
+                default: chosen = PieceType::Queen; break;
+                }
+                m_board.completePromotion(chosen);
+            }
+
+            // Ensure the displayed move text is populated for the move history.
+            // Some viewers may display '?' if SAN is missing. As a simple fallback,
+            // store the raw UCI string so the sidebar shows a readable move (e.g., "e2e4").
+            m_board.setLastMoveSAN(tok);
+
+            // Update evaluation history for each applied move
+            float eval = m_engine.getEvaluation();
+            if (m_historyIndex + 1 < m_evaluationHistory.size()) m_evaluationHistory.resize(m_historyIndex + 1);
+            m_evaluationHistory.push_back(eval);
+            m_historyIndex = m_evaluationHistory.size() - 1;
+        }
+    }
+
+    // After loading, stop any previous engine search
+    if (m_engineMode == EngineMode::AI_Thinking) { m_engine.stopSearch(); m_engineMode = EngineMode::Idle; }
+
+    // Determine whether the loaded position is terminal. If so, enter review mode;
+    // otherwise resume the match and, if it's the engine's turn, start thinking.
+    Board::GameState gs = m_board.getGameState();
+    if (gs == Board::GameState::Checkmate || gs == Board::GameState::Stalemate)
+    {
+        // Loaded a finished game -> post-match review
+        m_gameStarted = false;
+        m_matchEnded = true;
+        m_engine.clearMateDetection();
+    }
+    else
+    {
+        // Loaded an ongoing game -> resume play
+        m_gameStarted = true;
+        m_matchEnded = false;
+
+        // If it's the engine's turn, kick off a search immediately so the AI "catches up"
+        PieceColor humanPieceColor = (m_playerColor == PlayerColor::White) ? PieceColor::White : PieceColor::Black;
+        if (m_board.getCurrentTurn() != humanPieceColor)
+        {
+            m_engineMode = EngineMode::AI_Thinking;
+            m_engine.startSearch(m_board.getFEN(), m_timePerMoveMs);
+        }
+    }
+
+    std::printf("Loaded latest game from latest_match.txt\n");
+}
+
 void GameController::checkTerminalStateAndReset()
 {
     Board::GameState gs = m_board.getGameState();
@@ -364,27 +525,40 @@ void GameController::checkTerminalStateAndReset()
             m_engineMode = EngineMode::Idle;
         }
         m_engine.clearMateDetection();
-        m_evaluationHistory.clear();
-        m_evaluationHistory.push_back(0.0f);
-        m_historyIndex = 0;
+        // Enter post-match review mode: preserve board/history but prevent new moves
+        m_matchEnded = true;
+        // Preserve evaluation history and board state so the player may review the final position
+        // (do not clear m_evaluationHistory here)
     }
 }
  
 void GameController::endMatch()
 {
+    // Allow reset if a match is active OR if we are currently reviewing a finished game
+    if (!m_gameStarted && !m_matchEnded)
+    {
+        return;
+    }
+
+    // Ensure review flag and game-start flag are cleared so UI exits Review/Lobby appropriately
+    m_matchEnded = false;
+    m_gameStarted = false;
+
+    // Clear any active hints/selections so UI visuals reset immediately
+    clearActiveHint();
+
     // Abort any running engine search and return to lobby state
     if (m_engineMode == EngineMode::AI_Thinking)
     {
         m_engine.stopSearch();
         m_engineMode = EngineMode::Idle;
     }
-    // Exit match mode
-    m_gameStarted = false;
 
     // Reset board and UI state similar to pressing R (return to initial position)
     m_board = Board();
     m_board.initializeStandardSetup();
     m_selected.reset();
+    m_isReviewingHistory = false;
 
     // Reconfigure engine difficulty to current selection and reset evaluation history
     m_engine.setDifficulty(m_targetElo);
@@ -429,6 +603,7 @@ void GameController::cycleTargetElo()
 
 bool GameController::isMatchStarted() const { return m_gameStarted; }
 
+
 bool GameController::isMateDetected() const { return m_engine.isMateDetected(); }
 
 int GameController::getMateInMoves() const { return m_engine.getMateInMoves(); }
@@ -451,6 +626,10 @@ void GameController::startMatch()
     m_board = Board();
     m_board.initializeStandardSetup();
     m_selected.reset();
+    // Clear any active hint and selection to avoid leftover highlights from prior sessions
+    clearActiveHint();
+    m_isReviewingHistory = false;
+    m_matchEnded = false;
     m_evaluationHistory.clear();
     // Configure engine difficulty for this match
     m_engine.setDifficulty(m_targetElo);
@@ -627,22 +806,6 @@ void GameController::update()
         if (m_messageTimer < 0.0f) m_messageTimer = 0.0f;
     }
 
-    // If the game has reached a terminal state, exit match mode so lobby is available again
-    {
-        Board::GameState gs = m_board.getGameState();
-        if (gs == Board::GameState::Checkmate || gs == Board::GameState::Stalemate)
-        {
-            m_gameStarted = false;
-            if (m_engineMode == EngineMode::AI_Thinking)
-            {
-                m_engine.stopSearch();
-                m_engineMode = EngineMode::Idle;
-            }
-            // Reset mate detection and evaluation history so evaluation bar is neutral
-            m_engine.clearMateDetection();
-            m_evaluationHistory.clear();
-            m_evaluationHistory.push_back(0.0f);
-            m_historyIndex = 0;
-        }
-    }
+    // Check terminal state and enter review mode if needed (preserves history)
+    checkTerminalStateAndReset();
 }

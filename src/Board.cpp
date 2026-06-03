@@ -19,6 +19,11 @@ Board::Board()
     m_castlingRights = (uint8_t)(Board::CR_WHITE_K | Board::CR_WHITE_Q | Board::CR_BLACK_K | Board::CR_BLACK_Q);
 }
 
+std::vector<Board::ChessMove> Board::getMoveHistory() const
+{
+    return m_moveHistory;
+}
+
 void Board::setLastMoveSAN(const std::string& san)
 {
     if (!m_moveHistory.empty())

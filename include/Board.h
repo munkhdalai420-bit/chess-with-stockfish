@@ -98,6 +98,9 @@ public:
     void setLastMoveSAN(const std::string& san);
     std::string getFullPGNText() const;
 
+    // Return a copy of the internal move history (for serialization / review)
+    std::vector<ChessMove> getMoveHistory() const;
+
     // Parse Stockfish's Long Algebraic Notation (LAN) string into a ChessMove object
     // Input format: 4-5 characters (e.g., 'e2e4' or 'e7e8q')
     // For promotion moves (5 chars), the 5th character is not processed here

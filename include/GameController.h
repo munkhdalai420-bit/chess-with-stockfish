@@ -47,6 +47,9 @@ public:
     void update();
     // Request a short engine search to compute a hint move for the current position.
     void requestHint();
+    // Save/load latest match to disk
+    void saveLatestGame();
+    void loadLatestGame();
     // Cancel any active hint and stop hint searches
     void clearActiveHint();
     // Whether a hint can be requested right now (engine idle, match started, human to move)
@@ -85,6 +88,7 @@ private:
     int m_timePerMoveMs = 1000;
     int m_eloIndex = 3; // index into ELO_OPTIONS (default to 2000)
     bool m_gameStarted = false;
+    bool m_matchEnded = false; // true when a match has reached checkmate/stalemate (review mode)
 
     // Private helpers extracted from update() to improve readability and single-responsibility
     void handleKeyboardShortcuts();
@@ -107,6 +111,8 @@ public:
     void togglePlayerColor() { m_playerColor = (m_playerColor == PlayerColor::White) ? PlayerColor::Black : PlayerColor::White; }
     // Engine state query for UI: true if engine is currently idle
     bool isEngineIdle() const { return m_engineMode == EngineMode::Idle; }
+    // Post-match review accessor
+    bool isMatchEnded() const { return m_matchEnded; }
 
 private:
     // Encapsulated UI/audio/layout members kept private to avoid external mutation
