@@ -236,10 +236,10 @@ void GameController::handleBoardClick(const Vector2& mp)
     }
     else
     {
-        m_moveMessage = m_board.getLastMoveError();
-        if (m_moveMessage.empty()) m_moveMessage = "Illegal move";
-        m_messageTimer = 2.5f;
-        std::printf("Move failed: %s\n", m_moveMessage.c_str());
+        //m_moveMessage = m_board.getLastMoveError();
+        //if (m_moveMessage.empty()) m_moveMessage = "Illegal move";
+        //m_messageTimer = 2.5f;
+        //std::printf("Move failed: %s\n", m_moveMessage.c_str());
 
         if (m_board.at(row, col) != nullptr) m_selected = std::make_pair(row, col);
         else m_selected.reset();
@@ -782,8 +782,8 @@ std::optional<std::pair<int,int>> GameController::getSelected() const
     return m_selected;
 }
 
-std::string GameController::getMoveMessage() const { return m_moveMessage; }
-float GameController::getMessageTimer() const { return m_messageTimer; }
+//std::string GameController::getMoveMessage() const { return m_moveMessage; }
+//float GameController::getMessageTimer() const { return m_messageTimer; }
 
 void GameController::requestHint()
 {
@@ -851,11 +851,11 @@ void GameController::update()
     pollEngineForBestMove();
 
     // Decrement message timer
-    if (m_messageTimer > 0.0f)
-    {
-        m_messageTimer -= GetFrameTime();
-        if (m_messageTimer < 0.0f) m_messageTimer = 0.0f;
-    }
+    //if (m_messageTimer > 0.0f)
+    //{
+    //    m_messageTimer -= GetFrameTime();
+    //    if (m_messageTimer < 0.0f) m_messageTimer = 0.0f;
+    //}
 
     // Check terminal state and enter review mode if needed (preserves history)
     checkTerminalStateAndReset();

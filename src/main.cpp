@@ -58,11 +58,11 @@ int main()
         renderer.render(controller.getBoard(), controller.getSelected(), controller.getDisplayedEvaluation(), controller);
 
         // Draw temporary move message if present (controller manages the timer)
-        if (controller.getMessageTimer() > 0.0f)
-        {
-            const int MSG_FONT = 18;
-            DrawText(controller.getMoveMessage().c_str(), 10, 40, MSG_FONT, RED);
-        }
+        //if (controller.getMessageTimer() > 0.0f)
+        //{
+        //    const int MSG_FONT = 18;
+        //    DrawText(controller.getMoveMessage().c_str(), 10, 40, MSG_FONT, RED);
+        //}
 
     // Theme button moved to Renderer::render - main.cpp keeps main loop minimal
 

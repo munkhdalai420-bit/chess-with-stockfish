@@ -69,7 +69,10 @@ public:
     // Undo/Redo support
     struct ChessMove
     {
-        int r1, c1, r2, c2;
+        int r1 = 0;
+        int c1 = 0;
+        int r2 = 0;
+        int c2 = 0;
         PieceType movedType;
         PieceColor movedColor;
         std::optional<PieceType> capturedType;

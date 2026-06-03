@@ -107,8 +107,8 @@ public:
     std::optional<std::pair<int,int>> getSelected() const;
 
     // Temporary move message to display in the UI
-    std::string getMoveMessage() const;
-    float getMessageTimer() const;
+    //std::string getMoveMessage() const;
+    //float getMessageTimer() const;
 
 private:
     Board m_board;
@@ -162,8 +162,8 @@ public:
 
 private:
     // Encapsulated UI/audio/layout members kept private to avoid external mutation
-    std::string m_moveMessage;
-    float m_messageTimer = 0.0f;
+    //std::string m_moveMessage;
+    //float m_messageTimer = 0.0f;
 
     int m_windowWidth;
     int m_windowHeight;
