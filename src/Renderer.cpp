@@ -458,7 +458,7 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
     int sw = (int)MeasureTextEx(m_mainFont, status.c_str(), (float)STATUS_FONT_SIZE, 0.0f).x;
     int sx = panelX + (panelW - sw) / 2;
     int sy = panelY + padding;
-    DrawTextEx(m_mainFont, status.c_str(), { (float)sx, (float)sy }, (float)STATUS_FONT_SIZE, 0.0f, statusColor);
+    if (controller.isMatchStarted()) { DrawTextEx(m_mainFont, status.c_str(), { (float)sx, (float)sy }, (float)STATUS_FONT_SIZE, 0.0f, statusColor); }
 
     // Controls area directly under the status
     const float CTRL_Y = (float)(sy + STATUS_FONT_SIZE + 8);

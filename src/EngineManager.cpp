@@ -68,7 +68,7 @@ bool EngineManager::launch(const std::string& path)
         return false; // Already running
     }
 
-    std::string enginePath = path.empty() ? "D:/Downloads/raylib-quickstart-main2026/raylib-quickstart-main/engines/stockfish.exe" : path;
+    std::string enginePath = path.empty() ? "./engines/stockfish.exe" : path;
 
     // Create anonymous pipes for stdin and stdout
     SECURITY_ATTRIBUTES sa;
