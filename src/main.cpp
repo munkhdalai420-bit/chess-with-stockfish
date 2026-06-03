@@ -22,7 +22,7 @@ int main()
     // Tell the window to use vsync, work on high DPI displays, and request 4x MSAA
     SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT);
 
-    InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Chess - Rendering Foundation");
+    InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Little chess");
 
     // Set working directory to assets folder if available
     if (!SearchAndSetResourceDir("resources"))

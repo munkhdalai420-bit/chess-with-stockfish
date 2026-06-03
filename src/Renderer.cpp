@@ -157,10 +157,10 @@ std::string Renderer::textureFilenameForKey(const std::string& key) const
     char type = key[0];
     char lightDark = key[1];
 
-    std::string filename = "Chess_";
+    std::string filename = "piece_";
     filename.push_back(type);
     filename.push_back(lightDark);
-    filename += "t45.png"; // PNG-only asset name
+    filename += ".png"; // PNG-only asset name
     return filename;
 }
 
@@ -346,9 +346,7 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
             }
         }
         // Border
-        //DrawRectangleLines(barX, barY, BAR_W, barH, WHITE);
-        Rectangle rec = { barX, barY, BAR_W, barH };
-        DrawRectangleLinesEx(rec, 2, WHITE);
+        DrawRectangleLines(barX, barY, BAR_W, barH, WHITE);
     }
     // Draw move history sidebar on the right
     const int panelX = m_windowWidth - m_sidebarWidth;
@@ -356,9 +354,10 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
     const int panelW = m_sidebarWidth;
     const int panelH = m_windowHeight;
 
-    // Panel background
+    // Panel background (rounded)
     const Color panelBg = { 30, 30, 30, 220 };
-    DrawRectangle(panelX, panelY, panelW, panelH, panelBg);
+    Rectangle panelRec = { (float)panelX, (float)panelY, (float)panelW, (float)panelH };
+    DrawRectangleRec(panelRec, panelBg);
 
     const int titleFont = 24;
     const int bodyFont = 20; // monospaced not available, use custom font
@@ -415,14 +414,14 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
         bool canChangeDifficulty = !controller.isMatchStarted();
         if (!canChangeDifficulty)
         {
-            DrawRectangleRec(eloRect, Fade(GRAY, 0.4f));
+            DrawRectangleRounded(eloRect, 0.2f, 6, Fade(GRAY, 0.4f));
             std::string eloText = std::string("ELO:") + std::to_string(controller.getTargetElo()) + " Elo";
             DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 10 }, (float)ELO_FONT, 0.0f, Fade(WHITE, 0.6f));
         }
         else
         {
             bool hoverElo = CheckCollisionPointRec(mousePos, eloRect);
-            DrawRectangleRec(eloRect, hoverElo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f));
+            DrawRectangleRounded(eloRect, 0.2f, 6, hoverElo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f));
             std::string eloText = std::string("ELO:") + std::to_string(controller.getTargetElo()) + " Elo";
             DrawTextEx(m_mainFont, eloText.c_str(), { eloRect.x + 8, eloRect.y + 10 }, (float)ELO_FONT, 0.0f, WHITE);
             if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && hoverElo)
@@ -439,13 +438,13 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
         // Draw faded when switching is not allowed; avoid any mouse checks when disabled so it's physically unclickable
         if (!canSwitch)
         {
-            DrawRectangleRec(sideRect, Fade(GRAY, 0.3f));
+            DrawRectangleRounded(sideRect, 0.2f, 6, Fade(GRAY, 0.3f));
             DrawTextEx(m_mainFont, sideLabel, { sideRect.x + 8, sideRect.y + 10 }, (float)ELO_FONT, 0.0f, Fade(WHITE, 0.6f));
         }
         else
         {
             bool hoverSide = CheckCollisionPointRec(mousePos, sideRect);
-            DrawRectangleRec(sideRect, hoverSide ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f));
+            DrawRectangleRounded(sideRect, 0.2f, 6, hoverSide ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f));
             DrawTextEx(m_mainFont, sideLabel, { sideRect.x + 8, sideRect.y + 10 }, (float)ELO_FONT, 0.0f, WHITE);
             if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && hoverSide)
             {
@@ -479,11 +478,11 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
         bool hoverRedo = canRedoBtn && CheckCollisionPointRec(mp, redoRect);
         bool hoverHint = canHintBtn && CheckCollisionPointRec(mp, hintRect);
 
-        // Draw buttons
-        DrawRectangleRec(undoRect, canUndoBtn ? (hoverUndo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.2f));
-        DrawRectangleRec(startRect, hoverStart ? Fade(RED, 0.9f) : RED);
-        DrawRectangleRec(redoRect, canRedoBtn ? (hoverRedo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.2f));
-        DrawRectangleRec(hintRect, canHintBtn ? (hoverHint ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.2f));
+        // Draw buttons (rounded)
+        DrawRectangleRounded(undoRect, 0.6f, 6, canUndoBtn ? (hoverUndo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.2f));
+        DrawRectangleRounded(startRect, 0.6f, 6, hoverStart ? Fade(RED, 0.9f) : RED);
+        DrawRectangleRounded(redoRect, 0.6f, 6, canRedoBtn ? (hoverRedo ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.2f));
+        DrawRectangleRounded(hintRect, 0.6f, 6, canHintBtn ? (hoverHint ? Fade(GRAY, 0.8f) : Fade(GRAY, 0.6f)) : Fade(GRAY, 0.2f));
 
         // Labels
         const char* startLabel = matchStarted ? " END " : "START";
@@ -535,8 +534,8 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
     int historyH = panelH - historyY - (padding + 48); // leave space for theme controls at bottom
     Rectangle historyBox = { (float)historyX, (float)historyY, (float)historyW, (float)historyH };
 
-    // Draw background for history area (subtle)
-    DrawRectangle(historyX, historyY, historyW, historyH, Fade(BLACK, 0.25f));
+    // Draw background for history area (subtle, rounded)
+    DrawRectangleRec(historyBox, Fade(BLACK, 0.25f));
 
     // Build move-pair lines from PGN (e.g. "1. e4 e5", "2. Nf3 Nc6")
     std::vector<std::string> moveLines;
@@ -652,10 +651,12 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
         int sbY = historyY;
         int sbW = 6;
         int sbH = historyH;
-        DrawRectangle(sbX, sbY, sbW, sbH, Fade(WHITE, 0.08f));
+        Rectangle sbRect = { (float)sbX, (float)sbY, (float)sbW, (float)sbH };
+        DrawRectangleRounded(sbRect, 0.6f, 6, Fade(WHITE, 0.08f));
         float thumbH = std::max(20.0f, (float)historyH * (float)historyH / (float)totalH);
         float thumbY = sbY + (m_historyScrollOffset / (float)(totalH - historyH)) * (sbH - thumbH);
-        DrawRectangle(sbX, (int)thumbY, sbW, (int)thumbH, Fade(WHITE, 0.25f));
+        Rectangle thumbRect = { (float)sbX, (float)thumbY, (float)sbW, (float)thumbH };
+        DrawRectangleRounded(thumbRect, 0.6f, 6, Fade(WHITE, 0.25f));
     }
 
     // Theme button at bottom of sidebar (moved from main.cpp)
@@ -669,8 +670,8 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
         Rectangle themeRect = { themeX, themeY, boxW, boxH };
         Vector2 mp = GetMousePosition();
         bool hover = CheckCollisionPointRec(mp, themeRect);
-        // theme button always interactable
-        DrawRectangleRec(themeRect, hover ? Fade(GRAY, 0.6f) : Fade(GRAY, 0.5f));
+        // theme button always interactable (rounded)
+        DrawRectangleRounded(themeRect, 0.6f, 6, hover ? Fade(GRAY, 0.6f) : Fade(GRAY, 0.5f));
         const char* themeNames[5] = { "Grass", "Wood", "Ocean", "Classic", "Disco" };
         DrawTextEx(m_mainFont, themeNames[m_themeIndex], Vector2{ themeRect.x + 8, themeRect.y + 6 }, 18.0f, 0.0f, WHITE);
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && hover)
@@ -683,9 +684,8 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
         float cbX = themeRect.x + boxW + 12.0f;
         float cbY = themeRect.y + (boxH - cbSize) / 2.0f;
         m_animCheckboxBounds = { cbX, cbY, cbSize, cbSize };
-        // checkbox background
-        DrawRectangleRec(m_animCheckboxBounds, m_animatePieces ? Fade(RED, 0.95f) : Fade(WHITE, 0.15f));
-        DrawRectangleLines((int)cbX, (int)cbY, (int)cbSize, (int)cbSize, Fade(WHITE, 0.6f));
+        // checkbox background (rounded)
+        DrawRectangleRounded(m_animCheckboxBounds, 10.0f, 6, m_animatePieces ? Fade(RED, 0.95f) : Fade(WHITE, 0.15f));
         // label
         DrawTextEx(m_mainFont, "Animation", Vector2{ themeRect.x + boxW + 20.0f + cbSize, themeRect.y + 8.0f }, 16.0f, 0.0f, WHITE);
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
@@ -737,7 +737,7 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
         // Background: solid, slightly translucent rectangle so the board doesn't distract
         const Color promoBg = { 0, 0, 0, 220 };
         Rectangle bgRect = { (float)(startX - 8), (float)(y - 8), (float)(totalW + 16), (float)(ICON_SIZE + 16) };
-        DrawRectangleRec(bgRect, promoBg);
+        DrawRectangleRounded(bgRect, 0.6f, 6, promoBg);
 
         const std::vector<char> pieces = {'q','r','b','n'};
         char colorChar = (color == PieceColor::White) ? 'l' : 'd';
@@ -843,8 +843,7 @@ void Renderer::drawBoard(const Board& board, const std::optional<std::pair<int,i
             }
         }
     }
-    Rectangle rec = { m_boardOriginX, m_boardOriginY, m_tileSize * 8, m_tileSize * 8 };
-    DrawRectangleLinesEx(rec, 2, WHITE);
+    DrawRectangleLines(m_boardOriginX, m_boardOriginY, m_tileSize * 8, m_tileSize * 8, WHITE);
 
     {
         std::string hint = controller.getHintMove();
@@ -867,9 +866,9 @@ void Renderer::drawBoard(const Board& board, const std::optional<std::pair<int,i
                     Rectangle s2 = { (float)tileLeft(c2), (float)tileTop(r2), (float)m_tileSize, (float)m_tileSize };
                     DrawRectangleRec(s1, fillCol);
                     DrawRectangleRec(s2, fillCol);
-                    // Draw sharp border outlines
-                    DrawRectangleLinesEx(s1, 3, GREEN);
-                    DrawRectangleLinesEx(s2, 3, GREEN);
+                    // Draw border outlines (rounded)
+                    DrawRectangleLinesEx(s1, 2.0f, GREEN);
+                    DrawRectangleLinesEx(s2, 2.0f, GREEN);
                 }
             }
         }
