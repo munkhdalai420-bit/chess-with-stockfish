@@ -8,41 +8,67 @@
 class EngineManager
 {
 public:
-    /// Launches the Stockfish engine process with optional custom path.
-    /// If path is empty, defaults to "./engines/stockfish.exe"
+    /**
+     * @brief Launch the Stockfish engine subprocess and set up IPC pipes.
+     *
+     * Creates anonymous pipes for stdin/stdout redirection and starts a
+     * background worker thread to read engine output. If `path` is empty the
+     * implementation will attempt to locate the default engine binary.
+     * @param path Optional path to the engine executable.
+     * @return true on successful launch and UCI handshake, false on failure.
+     */
     bool launch(const std::string& path = "");
 
-    /// Sends a raw command to the Stockfish engine (e.g., "position startpos")
-    /// Returns false if engine is not running
+    /**
+     * @brief Send a raw UCI command to the engine.
+     * @param cmd The command string (without guaranteed trailing newline).
+     * @return true on success; false if engine is not running or write fails.
+     */
     bool sendCommand(const std::string& cmd);
 
-    /// Initiates a search from the given FEN position with a time limit in milliseconds
+    /**
+     * @brief Initiate an engine search from the provided FEN with a time limit.
+     *
+     * The engine will receive a "position fen <fen>" command followed by
+     * "go movetime <timeMs>". The background worker will parse live info
+     * lines and publish evaluations and eventual bestmove.
+     * @param fen FEN string representing the search position.
+     * @param timeMs Milliseconds of thinking time to allocate.
+     * @return true if the command was dispatched, false otherwise.
+     */
     bool startSearch(const std::string& fen, int timeMs);
 
-    /// Immediately stops the current search by sending "stop" to Stockfish
-    /// This allows the engine to return its current best guess
+    /**
+     * @brief Stop an ongoing search by sending the UCI "stop" command.
+     *
+     * Marks the current search as aborted and signals the engine to return
+     * its current best move. The aborted search result will be ignored by
+     * `checkBestMove`.
+     */
     void stopSearch();
 
-    /// Non-blocking check for a computed best move.
-    /// Returns true if a best move is available and populates outMove with it.
-    /// Clears the ready flag after retrieval.
+    /**
+     * @brief Non-blocking retrieval of a computed bestmove.
+     * @param outMove Receives the UCI move string when available (e.g., "e2e4").
+     * @return true if a best move was available and written to outMove.
+     */
     bool checkBestMove(std::string& outMove);
 
-    /// Returns the last published evaluation from the engine (positive = White advantage)
+    /** @brief Return the most recent evaluation published by the engine (positive = White advantage). */
     float getEvaluation() const;
-    /// Configure engine strength via UCI Elo (enables UCI_LimitStrength)
+    /** @brief Configure engine playing strength (UCI Elo). */
     void setDifficulty(int elo);
-    /// Clear any cached mate detection state
+    /** @brief Clear any cached mate detection state. */
     void clearMateDetection();
-    /// Returns true if the engine has reported a forced mate in its info lines
+    /** @brief True if the engine has reported a forced mate in its info lines. */
     bool isMateDetected() const;
-    /// If mate detected, returns mate distance in ply (positive = White mating, negative = Black mating)
+    /** @brief If mate detected, returns mate distance in plies (signed by side). */
     int getMateInMoves() const;
 
-    /// Checks if the engine is currently running
+    /** @brief Return true if the engine process and worker thread are active. */
     bool isRunning() const;
 
-    /// Gracefully stops the engine and cleans up resources
+    /** @brief Gracefully stop the engine and release OS resources. */
     void shutdown();
 
     EngineManager();

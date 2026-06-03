@@ -99,6 +99,12 @@ void GameController::handleRestartKey()
 
 void GameController::handlePromotionClick()
 {
+    /**
+     * @brief Handle mouse selection of a promotion piece when a promotion is pending.
+     *
+     * Displays a centered row of piece icons and maps clicks to a chosen
+     * PieceType which is then passed to Board::completePromotion.
+     */
     if (!IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) return;
     Vector2 mp = GetMousePosition();
     const int ICON_SIZE = 64;
@@ -242,6 +248,12 @@ void GameController::handleBoardClick(const Vector2& mp)
 
 void GameController::maybeTriggerAI()
 {
+    /**
+     * @brief Determine whether the AI should start thinking and kick off search.
+     *
+     * This checks match and engine state, prevents thinking while in review
+     * and bridges to EngineManager::startSearch when appropriate.
+     */
     if (m_matchEnded) return; // don't start AI thinking in post-match review
     if (!m_gameStarted || m_engineMode != EngineMode::Idle) return;
     if (m_board.getGameState() != Board::GameState::Active) return;
@@ -256,6 +268,12 @@ void GameController::maybeTriggerAI()
 
 void GameController::pollEngineForBestMove()
 {
+    /**
+     * @brief Non-blocking poll for an AI-computed best move and application.
+     *
+     * When the engine reports a best move, this routine calls applyEngineMove
+     * which advances the board and records evaluation history.
+     */
     if (m_engineMode != EngineMode::AI_Thinking) return;
     std::string bestMove;
     if (!m_engine.checkBestMove(bestMove)) return;
@@ -265,6 +283,13 @@ void GameController::pollEngineForBestMove()
 
 void GameController::applyEngineMove(const std::string& bestMove)
 {
+    /**
+     * @brief Parse and apply an engine UCI move string to the Board.
+     *
+     * Handles promotions encoded in the UCI string, triggers animations and
+     * sound effects, updates move SAN and evaluation timeline, and resets
+     * engine mode to Idle when done.
+     */
     Board::ChessMove engineMove = m_board.parseEngineMove(bestMove);
     const Piece* moving = m_board.at(engineMove.r1, engineMove.c1);
     if (moving && m_renderer)
@@ -362,6 +387,17 @@ void GameController::recordEvaluationForNewPosition()
 // line2: space-separated UCI moves (e.g. e2e4 e7e5 ...)
 void GameController::saveLatestGame()
 {
+    /**
+     * @brief Serialize the latest game to `latest_match.txt`.
+     *
+     * Format:
+     *   line1: playerColor (0 = White, 1 = Black)
+     *   line2: space-separated UCI moves (e.g. e2e4 e7e5 ...)
+     *
+     * The implementation converts each ChessMove in Board::m_moveHistory into
+     * a compact UCI token and writes the entire move sequence on a single
+     * line separated by spaces.
+     */
     std::ofstream ofs("latest_match.txt", std::ios::trunc);
     if (!ofs)
     {
@@ -418,6 +454,14 @@ void GameController::saveLatestGame()
 // Load latest game saved by saveLatestGame. Restores player color and replays UCI moves.
 void GameController::loadLatestGame()
 {
+    /**
+     * @brief Load a previously saved game from `latest_match.txt` and replay it.
+     *
+     * This routine restores player color, resets the board and then sequentially
+     * parses and applies each UCI token using Board::parseEngineMove and
+     * Board::movePiece. Promotion tokens (5-character forms) are handled by
+     * completing promotion immediately after the corresponding move.
+     */
     std::ifstream ifs("latest_match.txt");
     if (!ifs)
     {
@@ -515,6 +559,13 @@ void GameController::loadLatestGame()
 
 void GameController::checkTerminalStateAndReset()
 {
+    /**
+     * @brief Detect terminal game states and transition into review mode.
+     *
+     * When checkmate or stalemate is detected, this method stops any active
+     * engine search, clears mate detection, and leaves the board and
+     * evaluation history intact for post-match review.
+     */
     Board::GameState gs = m_board.getGameState();
     if (gs == Board::GameState::Checkmate || gs == Board::GameState::Stalemate)
     {

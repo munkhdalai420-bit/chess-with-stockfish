@@ -12,29 +12,58 @@ class GameController;
 class Renderer
 {
 public:
+    /** Visual board themes available to the renderer. */
     enum class BoardTheme { Wood, Grass, Ocean, Classic, Disco };
 
+    /**
+     * @brief Construct a Renderer
+     * @param windowWidth Application window width in pixels
+     * @param windowHeight Application window height in pixels
+     * @param tileSize Size in pixels of a single chess tile
+     */
     Renderer(int windowWidth, int windowHeight, int tileSize);
+
+    /** @brief Destructor; releases GPU textures and font resources. */
     ~Renderer();
 
-    // Set visual theme for the board tiles
+    /**
+     * @brief Set the visual theme used for board coloring.
+     * @param theme Theme enumerator
+     */
     void setTheme(BoardTheme theme);
 
-    // Loads textures for all piece types/colors found in the assets folder.
-    // If SVG files are present instead of PNGs, replace the extension in the implementation.
+    /**
+     * @brief Load piece textures from the resources directory.
+     * @return true when all required textures were successfully loaded.
+     */
     bool loadTextures();
 
-    // Render the board and pieces. 'selected' is an optional board coordinate {row, col}
-    // 'evaluation' is a signed value (positive = White advantage) corresponding
-    // to the currently displayed history index. Accept only const references to
-    // indicate the Renderer will not mutate game state.
-    // Renderer will issue UI commands on the controller (undo/start/redo/etc.),
-    // so render accepts a non-const reference for those interactions while keeping
-    // the board parameter const to avoid mutation by the renderer.
+    /**
+     * @brief Render the full UI for the frame.
+     *
+     * The renderer reads game state from the provided const `Board` and selected
+     * tile, draws board and pieces, and may invoke commands on `controller`
+     * (e.g., start/stop/undo) in response to UI interactions.
+     * @param board Const reference to the game board to draw.
+     * @param selected Optional selected square (row,col) to highlight.
+     * @param evaluation Displayed engine evaluation value for the current history index.
+     * @param controller Non-const reference so the renderer may call UI commands.
+     */
     void render(const Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller);
-    // Trigger a move animation (from tile X/Y to tile X/Y). X==col, Y==row
-    // Optional parameters allow a secondary piece (rook) to be animated alongside
-    // the primary piece (used for castling).
+
+    /**
+     * @brief Start an on-screen move animation from source to destination squares.
+     * @param fromX Source column (0..7)
+     * @param fromY Source row (0..7)
+     * @param toX Destination column (0..7)
+     * @param toY Destination row (0..7)
+     * @param pieceChar Piece type character (e.g., 'k','q','r','b','n','p')
+     * @param pieceColor Piece color code ('l' or 'd')
+     * @param hasSecondary When true, animate a secondary piece (rook) for castling
+     * @param secFromX Secondary piece source column
+     * @param secToX Secondary piece destination column
+     * @param secPieceChar Secondary piece type character (default 'r')
+     */
     void triggerMoveAnimation(int fromX, int fromY, int toX, int toY, char pieceChar, char pieceColor,
                               bool hasSecondary = false, int secFromX = -1, int secToX = -1, char secPieceChar = 'r');
 

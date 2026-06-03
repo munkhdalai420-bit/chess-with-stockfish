@@ -19,15 +19,33 @@ public:
     // bit2 = Black kingside, bit3 = Black queenside)
     enum CastlingMask : uint8_t { CR_WHITE_K = 1 << 0, CR_WHITE_Q = 1 << 1, CR_BLACK_K = 1 << 2, CR_BLACK_Q = 1 << 3 };
 
+    /**
+     * @brief Construct an empty Board instance.
+     *
+     * Initializes internal arrays, sets starting turn to White, and resets
+     * clocks and castling rights to defaults. Use `initializeStandardSetup()`
+     * to populate with the standard chess starting position.
+     */
     Board();
 
+    /** @brief Return a const pointer to the piece at (row,col) or nullptr. */
     const Piece* at(int row, int col) const;
+    /** @brief Return a mutable pointer to the piece at (row,col) or nullptr. */
     Piece* at(int row, int col);
 
+    /** @brief Populate the board with the standard chess starting position. */
     void initializeStandardSetup();
     // Attempt to move a piece from start to end. Returns a MoveResult
     // indicating the outcome (Invalid if move failed). Updates board state
     // (including captures) when the move succeeds.
+    /**
+     * @brief Attempt to move a piece on the board.
+     *
+     * Performs legality checks, applies special rules (en-passant, castling,
+     * promotions) and updates internal move history and clocks when the move
+     * succeeds. If the move would leave the mover in check, it is rejected.
+     * @return MoveResult indicating outcome or Invalid when move failed.
+     */
     MoveResult movePiece(int startRow, int startCol, int endRow, int endCol);
 
     // Check utilities
@@ -82,15 +100,32 @@ public:
     // the move internally and restores board state before returning.
     bool wouldMoveBeLegal(int startRow, int startCol, int endRow, int endCol) const;
     // Promotion handling
+    /** @brief True if a promotion choice is pending for the last applied move. */
     bool isAwaitingPromotion() const;
+    /** @brief Return the square (row,col) where promotion is awaiting. */
     std::pair<int,int> getPendingPromotionSquare() const;
+    /**
+     * @brief Finalize a pending promotion to the chosen piece type.
+     * @param chosenType PieceType selected by the player (Queen/Rook/Bishop/Knight)
+     * @return MoveResult::Promotion on success or Invalid if no promotion pending.
+     */
     MoveResult completePromotion(PieceType chosenType);
 
     // Last committed move (if any)
     std::optional<ChessMove> getLastMove() const;
 
     // FEN support
+    /** @brief Produce FEN string for the current board position. */
     std::string getFEN() const;
+    /**
+     * @brief Load board state from a FEN string.
+     *
+     * Parses a full FEN token (piece placement, active color, castling,
+     * en-passant, halfmove and fullmove numbers). Parsing is transactional:
+     * on failure the board remains unchanged and false is returned.
+     * @param fen FEN string to parse
+     * @return true on success, false on parse error
+     */
     bool loadFromFEN(const std::string& fen);
 
     // PGN / SAN utilities
@@ -99,11 +134,19 @@ public:
     std::string getFullPGNText() const;
 
     // Return a copy of the internal move history (for serialization / review)
+    /** @brief Return a copy of the internal move history (for serialization/review). */
     std::vector<ChessMove> getMoveHistory() const;
 
     // Parse Stockfish's Long Algebraic Notation (LAN) string into a ChessMove object
     // Input format: 4-5 characters (e.g., 'e2e4' or 'e7e8q')
     // For promotion moves (5 chars), the 5th character is not processed here
+    /**
+     * @brief Parse a UCI/LAN engine move string into a ChessMove structure.
+     *
+     * Expected formats are "e2e4" or the 5-character promotion form
+     * "e7e8q". The promotion character (if present) is not applied here; the
+     * caller should handle promotion application separately.
+     */
     ChessMove parseEngineMove(const std::string& moveStr);
 
     // Self-test utilities

@@ -1,2 +1,2 @@
-1
-c2c4 b8c6 b1c3 e7e5 h2h4 f8e7 e2e3 g8f6 c3d5 f6d5 c4d5 c6d4 e3d4 e5d4 d1f3 h7h5 f1c4 h8h6 d5d6
+0
+d2d4 g8f6 b1c3 d7d5 e2e3 b8d7 g1f3 e7e6 f1d3 a7a6 e1g1 c7c5 b2b3 d8c7

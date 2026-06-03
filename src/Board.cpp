@@ -19,6 +19,14 @@ Board::Board()
     m_castlingRights = (uint8_t)(Board::CR_WHITE_K | Board::CR_WHITE_Q | Board::CR_BLACK_K | Board::CR_BLACK_Q);
 }
 
+/**
+ * @brief Convert an internal ChessMove to SAN (Standard Algebraic Notation).
+ *
+ * This routine composes human-readable SAN using move metadata and
+ * legality checks. It attempts disambiguation when multiple pieces of the
+ * same type could move to a destination square.
+ */
+
 std::vector<Board::ChessMove> Board::getMoveHistory() const
 {
     return m_moveHistory;
@@ -210,6 +218,12 @@ std::string Board::moveToSAN(const ChessMove& move)
 
 std::string Board::getFEN() const
 {
+    /**
+     * @brief Produce a FEN string for the current board state.
+     *
+     * The FEN consists of piece placement, active color, castling rights,
+     * en-passant square, halfmove clock and fullmove number.
+     */
     // Piece placement
     std::string fen;
     for (int r = 0; r < Tiles; ++r)
@@ -283,6 +297,12 @@ std::string Board::getFEN() const
 
 bool Board::loadFromFEN(const std::string& fen)
 {
+    /**
+     * @brief Parse a FEN string and atomically commit it to the board.
+     *
+     * Parsing is performed into temporary structures; if any validation fails
+     * the method returns false and the current board is left unchanged.
+     */
     // Parse into temporaries first. If any parse error occurs, abort and
     // leave the current board untouched.
     std::vector<std::string> parts;
@@ -444,6 +464,13 @@ bool Board::hasLegalMoves(PieceColor color) const
 
 bool Board::hasLegalMoves(PieceColor color)
 {
+    /**
+     * @brief Determine whether `color` has any legal moves.
+     *
+     * The non-const variant simulates moves directly on this board while
+     * preserving and restoring state as necessary. The const overload uses a
+     * temporary Board created from the FEN string for safe simulation.
+     */
     // Save state to restore after simulation
     auto savedHistory = m_moveHistory;
     auto savedRedo = m_redoStack;
@@ -532,6 +559,14 @@ std::pair<int,int> Board::getEnPassantTarget() const
 
 Board::MoveResult Board::movePiece(int startRow, int startCol, int endRow, int endCol)
 {
+    /**
+     * @brief Perform a move with full rule handling and history recording.
+     *
+     * This function validates input, applies special rules (en-passant,
+     * castling, promotion detection), updates castling rights and clocks,
+     * and pushes a ChessMove record into the history. It will roll back
+     * and return Invalid if the move leaves the mover in check.
+     */
     // Basic bounds
     if (startRow < 0 || startRow >= Tiles || startCol < 0 || startCol >= Tiles)
     {
@@ -847,9 +882,11 @@ Board::MoveResult Board::movePiece(int startRow, int startCol, int endRow, int e
 
 bool Board::wouldMoveBeLegal(int startRow, int startCol, int endRow, int endCol) const
 {
-    // Save internal mutable state
-    // Implementation cannot modify member state because this method is const.
-    // Use a temporary board reconstructed from FEN to simulate the move.
+    /**
+     * @brief Check whether a hypothetical move would be legal without mutating
+     * the current board. This is implemented by making a temporary board via
+     * FEN round-trip and attempting the move there.
+     */
     Board tmp;
     if (!tmp.loadFromFEN(this->getFEN())) return false;
     const Piece* p = tmp.at(startRow, startCol);
@@ -918,6 +955,13 @@ std::optional<Board::ChessMove> Board::getLastMove() const
 
 Board::MoveResult Board::completePromotion(PieceType chosenType)
 {
+    /**
+     * @brief Finalize a pending promotion to the selected piece type.
+     *
+     * This method is invoked by the UI after the player chooses a promotion
+     * option. It updates the piece type on the board and records the
+     * promotion choice in move history before toggling the turn.
+     */
     if (!m_isAwaitingPromotion || m_moveHistory.empty()) return MoveResult::Invalid;
 
     ChessMove &mv = m_moveHistory.back();
@@ -953,6 +997,11 @@ Board::MoveResult Board::completePromotion(PieceType chosenType)
 
 void Board::undoMove()
 {
+    /**
+     * @brief Undo the last committed move and restore prior board/clocks/state.
+     *
+     * The move is popped from m_moveHistory and pushed onto m_redoStack.
+     */
     if (m_moveHistory.empty()) return;
     ChessMove mv = m_moveHistory.back();
     m_moveHistory.pop_back();
@@ -1011,6 +1060,12 @@ void Board::undoMove()
 
 void Board::redoMove()
 {
+    /**
+     * @brief Re-apply a previously undone move from the redo stack.
+     *
+     * Restores piece placements, castling rights and clocks to the state
+     * immediately after the move.
+     */
     if (m_redoStack.empty()) return;
     ChessMove mv = m_redoStack.back();
     m_redoStack.pop_back();

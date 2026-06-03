@@ -4,34 +4,51 @@
 #include <sstream>
 #include <chrono>
 
+/**
+ * @brief Default constructor
+ *
+ * Basic default construction; heavy initialization (process creation and
+ * worker thread start) is performed by `launch()`.
+ */
 EngineManager::EngineManager() = default;
 
+/**
+ * @brief Destructor ensures engine is shut down and resources released.
+ */
 EngineManager::~EngineManager()
 {
     shutdown();
 }
 
+/** @brief Get the most recently parsed engine evaluation (normalized to White's perspective). */
 float EngineManager::getEvaluation() const
 {
     return m_currentEvaluation.load();
 }
 
+/** @brief Return true when the engine has reported a mate line. */
 bool EngineManager::isMateDetected() const
 {
     return m_isMateDetected.load();
 }
 
+/** @brief Return mate distance in plies as reported by the engine (signed). */
 int EngineManager::getMateInMoves() const
 {
     return m_mateInMoves.load();
 }
 
+/** @brief Reset mate detection state. */
 void EngineManager::clearMateDetection()
 {
     m_isMateDetected.store(false);
     m_mateInMoves.store(0);
 }
 
+/**
+ * @brief Configure engine playing strength via UCI options (Elo).
+ * @param elo Target Elo value applied to the engine using UCI_LimitStrength.
+ */
 void EngineManager::setDifficulty(int elo)
 {
     if (!m_isRunning) return;
@@ -122,6 +139,9 @@ bool EngineManager::launch(const std::string& path)
     m_shouldShutdown = false;
 
     // Start background worker thread
+    // Start the background thread that continuously reads engine stdout
+    // and parses info/bestmove lines. This thread is required to keep the
+    // main render loop non-blocking.
     m_workerThread = std::thread(&EngineManager::backgroundWorker, this);
 
     // Perform UCI handshake: send "uci" and wait for "uciok"
@@ -245,7 +265,8 @@ void EngineManager::stopSearch()
     // Mark that we're aborting this search so we can ignore its bestmove response
     m_searchAborted = true;
 
-    // Send "stop" command to force Stockfish to halt and return current best move
+    // Send "stop" command to force Stockfish to halt and return current best move.
+    // The worker thread will then parse the bestmove and set m_bestMoveReady.
     sendCommand("stop");
 }
 
@@ -351,6 +372,13 @@ void EngineManager::shutdown()
 
 void EngineManager::backgroundWorker()
 {
+    /**
+     * @brief Background reader thread for engine stdout.
+     *
+     * Continuously reads from the engine stdout pipe, accumulates text, splits
+     * lines on '\n', parses info lines (evaluation/mate) and bestmove, and
+     * signals waiting callers via atomics and mutex-protected state.
+     */
     const int BUFFER_SIZE = 4096;
     char buffer[BUFFER_SIZE];
     std::string accumulator;

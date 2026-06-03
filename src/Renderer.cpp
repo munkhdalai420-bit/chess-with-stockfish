@@ -44,6 +44,14 @@ static std::vector<std::string> wrapText(const std::string &text, int maxWidth, 
     if (!cur.empty()) lines.push_back(cur);
     return lines;
 }
+
+/**
+ * @brief Start a piece move animation that will be advanced by Renderer::render/draw code.
+ *
+ * The animation stores source/destination grid coords and an easing progress
+ * value; the actual drawing and progress advancement occurs every frame in
+ * `drawPieces`.
+ */
 void Renderer::triggerMoveAnimation(int fromX, int fromY, int toX, int toY, char pieceChar, char pieceColor,
                                     bool hasSecondary, int secFromX, int secToX, char secPieceChar)
 {
@@ -63,6 +71,12 @@ void Renderer::triggerMoveAnimation(int fromX, int fromY, int toX, int toY, char
     m_currentAnim.secToX = secToX;
     m_currentAnim.secPieceChar = secPieceChar;
 }
+
+/**
+ * @brief Construct a Renderer and initialize layout/Font resources.
+ *
+ * Loads the main UI font and configures initial board origin/size metrics.
+ */
 Renderer::Renderer(int windowWidth, int windowHeight, int tileSize)
     : m_windowWidth(windowWidth), m_windowHeight(windowHeight), m_tileSize(tileSize)
 {
@@ -179,6 +193,12 @@ const Texture2D* Renderer::textureForKey(const std::string& key) const
 
 bool Renderer::loadTextures()
 {
+    /**
+     * @brief Load piece textures into the renderer cache.
+     *
+     * Iterates all supported piece types and colors, attempts to load PNG
+     * resources, and applies bilinear filtering for high-DPI fidelity.
+     */
     // Iterate piece types and colors directly and load textures immediately.
     const std::vector<char> typeChars = {'k','q','r','b','n','p'}; // piece letters
     const std::vector<char> colors = {'l','d'}; // l = light (white), d = dark (black)
@@ -233,6 +253,15 @@ bool Renderer::loadTextures()
 
 void Renderer::render(const Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller)
 {
+    /**
+     * @brief Render the full UI for the current frame.
+     *
+     * Responsibilities:
+     *  - update animation progress
+     *  - draw board, hints, and pieces
+     *  - render evaluation bar and sidebar controls
+     *  - handle UI interactions (buttons, history click, save/load)
+     */
     // Update flip state from controller (true when human chose Black)
     m_flip = (controller.getPlayerColor() == GameController::PlayerColor::Black);
 
@@ -813,6 +842,13 @@ void Renderer::render(const Board& board, const std::optional<std::pair<int,int>
 
 void Renderer::drawBoard(const Board& board, const std::optional<std::pair<int,int>>& selected, const GameController& controller) const
 {
+    /**
+     * @brief Draw the board tiles, labels, last-move and hint overlays.
+     *
+     * This helper is intentionally const and reads only from the provided
+     * board/controller state. It does not mutate any persistent renderer
+     * state except for the mutable flip flag which mirrors controller side.
+     */
     // Colors for the board
     // Select colors based on the currently selected theme
     Color lightColor;
@@ -1005,6 +1041,12 @@ void Renderer::drawBoard(const Board& board, const std::optional<std::pair<int,i
 
 void Renderer::drawPieces(const Board& board)
 {
+    /**
+     * @brief Draw static piece textures and any currently active piece animation.
+     *
+     * Draw order ensures animated pieces are rendered on top while
+     * destination tiles are skipped during the static pass to avoid duplication.
+     */
     // Draw static pieces, but skip the destination tile of an active animation so we can draw
     // the moving piece separately and avoid duplication.
     for (int r = 0; r < Board::Tiles; ++r)

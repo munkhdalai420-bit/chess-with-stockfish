@@ -15,28 +15,59 @@ public:
     // Player side selection (view from the human player's perspective)
     enum class PlayerColor { White, Black };
 
+    /**
+     * @brief Construct a GameController
+     *
+     * Initializes audio, launches the engine, configures the initial board
+     * and evaluation history, and wires a non-owning Renderer pointer.
+     * @param windowWidth Application window width in pixels.
+     * @param windowHeight Application window height in pixels.
+     * @param tileSize Size of one chess tile in pixels.
+     * @param sidebarWidth Width reserved for the UI sidebar panel.
+     * @param renderer Non-owning pointer to the Renderer used for drawing.
+     */
     GameController(int windowWidth, int windowHeight, int tileSize, int sidebarWidth, Renderer* renderer);
+
+    /**
+     * @brief Destructor
+     *
+     * Stops the engine and releases audio resources if enabled.
+     */
     ~GameController();
 
     // Elo options and configuration
     static const int ELO_COUNT = 4;
     static const int ELO_OPTIONS[ELO_COUNT];
 
+    /** @brief Get the currently selected engine Elo. */
     int getTargetElo() const;
+    /** @brief Cycle to the next Elo option and update the engine difficulty. */
     void cycleTargetElo();
 
+    /** @brief Returns true when a match is currently active. */
     bool isMatchStarted() const;
+    /** @brief Start a new match (reset board, history and engine state). */
     void startMatch();
+    /** @brief End the current match and return to lobby/review state. */
     void endMatch();
 
     // History navigation
+    /** @brief Undo the last ply and enter review mode. */
     void undo();
+    /** @brief Redo a previously undone ply and enter review mode. */
     void redo();
+    /**
+     * @brief Jump to a specific history/evaluation index.
+     * @param index Target history index (0 == initial position).
+     */
     void goToHistoryIndex(size_t index);
 
     // Returns the evaluation corresponding to the currently displayed history index
+    /** @brief Evaluation value corresponding to the current history index. */
     float getDisplayedEvaluation() const;
+    /** @brief True if the engine has reported a mate line. */
     bool isMateDetected() const;
+    /** @brief If mate detected, mate distance in plies (signed by side). */
     int getMateInMoves() const;
 
     // Undo/Redo availability for UI
@@ -44,11 +75,26 @@ public:
     bool canRedo() const;
 
     // Process input and advance game state. Should be called once per frame.
+    /**
+     * @brief Per-frame update.
+     *
+     * Polls input, handles promotion UI, triggers or polls the engine
+     * as required, updates timers and checks terminal state.
+     */
     void update();
     // Request a short engine search to compute a hint move for the current position.
+    /**
+     * @brief Request a short, fixed-time engine search to compute a hint.
+     *
+     * This method will set the engine mode to Hint_Calculating and ask the
+     * EngineManager to perform a short search. The result is captured via
+     * pollHintCalculation() in the update loop.
+     */
     void requestHint();
     // Save/load latest match to disk
+    /** @brief Save the latest match to `latest_match.txt` (player color + UCI move list). */
     void saveLatestGame();
+    /** @brief Load a saved match from `latest_match.txt` and replay moves. */
     void loadLatestGame();
     // Cancel any active hint and stop hint searches
     void clearActiveHint();
