@@ -311,7 +311,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="src\icon.ico" />
-    <None Include="SUMMARY_REPORT.md" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\application.rc" />
