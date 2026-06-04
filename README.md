@@ -1,4 +1,4 @@
-# Advanced Multi-Threaded Chess Application
+# ![icon](https://ibb.co/8LRsJtdP/Group-1-3.png)Advanced Multi-Threaded Chess Application
 
 An interactive, high-performance desktop Chess application built from scratch in C++ using the **Raylib** immediate-mode GUI framework and featuring asynchronous **Stockfish AI** integration. 
 
