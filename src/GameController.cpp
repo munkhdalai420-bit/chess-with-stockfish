@@ -93,10 +93,6 @@ void GameController::pollHintCalculation()
     }
 }
 
-void GameController::handleRestartKey()
-{
-}
-
 void GameController::handlePromotionClick()
 {
     /**

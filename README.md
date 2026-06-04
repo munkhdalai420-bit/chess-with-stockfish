@@ -1,4 +1,4 @@
-# <img src="./assets/icons/chess-icon.png" width="24" height="24" />Advanced Multi-Threaded Chess Application
+# <img src="./resources/icons/chess-icon.png" width="24" height="24" />Advanced Multi-Threaded Chess Application
 
 An interactive, high-performance desktop Chess application built from scratch in C++ using the **Raylib** immediate-mode GUI framework and featuring asynchronous **Stockfish AI** integration. 
 
@@ -6,11 +6,11 @@ This project goes beyond traditional turn-based chess games by executing engine 
 
 ## Key Features
 
-* 🤖 **Asynchronous Stockfish Engine:** Integrated Stockfish UCI engine operating on a separate background thread via non-blocking OS pipe streams.
-* 🎚️ **Dynamic ELO Selection:** Real-time difficulty adjustment ranging through distinct rating profiles (500 -> 1000 -> 1500 -> 2000).
-* 🔄 **Bi-directional State Traversal:** Full match timeline history management allowing infinite Undo/Redo cycles and continuous SAN (Standard Algebraic Notation) logging.
-* 💾 **Disk-Backed State Persistence:** Robust custom serialization tracking complete board parameters and timeline arrays to a local file (`latest_match.txt`).
-* 🎨 **Immediate-Mode Custom UI:** Fully dynamic layout scaling incorporating real-time engine evaluation bars, color theme shifting, piece move animations, and responsive side control panels.
+* **Asynchronous Stockfish Engine:** Integrated Stockfish UCI engine operating on a separate background thread via non-blocking OS pipe streams.
+* **Dynamic ELO Selection:** Real-time difficulty adjustment ranging through distinct rating profiles (500 -> 1000 -> 1500 -> 2000).
+* **Bi-directional State Traversal:** Full match timeline history management allowing infinite Undo/Redo cycles and continuous SAN (Standard Algebraic Notation) logging.
+* **Disk-Backed State Persistence:** Robust custom serialization tracking complete board parameters and timeline arrays to a local file (`latest_match.txt`).
+* **Immediate-Mode Custom UI:** Fully dynamic layout scaling incorporating real-time engine evaluation bars, color theme shifting, piece move animations, and responsive side control panels.
 
 ---
 

@@ -32,6 +32,15 @@ int main()
         return 1;
     }
 
+    Image icon = LoadImage("./icons/chess-icon.png");
+    if (icon.data != NULL) { // Check if load succeeded
+        // Force the image to be 4-channel RGBA (standard for icons)
+        ImageFormat(&icon, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+
+        SetWindowIcon(icon);
+        UnloadImage(icon);
+    }
+
     Renderer renderer(WINDOW_WIDTH, WINDOW_HEIGHT, TILE_SIZE);
     if (!renderer.loadTextures())
     {
