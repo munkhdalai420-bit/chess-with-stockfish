@@ -1,500 +1,274 @@
-```markdown
+# Advanced Multi-Threaded Chess Application
 
-\# Architectural Component Specification
+An interactive, high-performance desktop Chess application built from scratch in C++ using the **Raylib** immediate-mode GUI framework and featuring asynchronous **Stockfish AI** integration. 
 
+This project goes beyond traditional turn-based chess games by executing engine evaluation and depth searches in an isolated native background worker thread. This ensures the immediate-mode rendering loop remains completely fluid, responsive, and stutter-free.
 
+## Key Features
 
-This document provides an exhaustive reference of the primary class architectures, access modifiers, field types, and member responsibilities driving the core execution lifecycle of the application.
+* 🤖 **Asynchronous Stockfish Engine:** Integrated Stockfish UCI engine operating on a separate background thread via non-blocking OS pipe streams.
+* 🎚️ **Dynamic ELO Selection:** Real-time difficulty adjustment ranging through distinct rating profiles (500 -> 1000 -> 1500 -> 2000).
+* 🔄 **Bi-directional State Traversal:** Full match timeline history management allowing infinite Undo/Redo cycles and continuous SAN (Standard Algebraic Notation) logging.
+* 💾 **Disk-Backed State Persistence:** Robust custom serialization tracking complete board parameters and timeline arrays to a local file (`latest_match.txt`).
+* 🎨 **Immediate-Mode Custom UI:** Fully dynamic layout scaling incorporating real-time engine evaluation bars, color theme shifting, piece move animations, and responsive side control panels.
 
+---
 
+## Component Architecture Overview
 
-\---
-
-
-
-\## Component Architecture Overview
-
-
-
-
-
+```text
+       ┌─────────────────────────────────────────────────────────┐
+       │                     GameController                      │
+       │  (State Machine, Core Coordination & Rules Mediation)   │
+       └───────────┬─────────────────────────┬───────────────────┘
+                   │                         │
+                   │ Composition             │ Composition
+                   ▼                         ▼
+       ┌───────────────────────┐ ┌───────────────────────────────┐
+       │         Board         │ │         EngineManager         │
+       │ (Pure Data Model/FEN) │ │  (Asynchronous Stockfish IPC) │
+       └───────────────────────┘ └───────────────────────────────┘
+                   ▲
+                   │ Dependency 
+                   │ (Reads State via Const Reference)
+                   │
+       ┌───────────┴───────────┐
+       │       Renderer        │
+       │ (Immediate-Mode UI)   │
+       └───────────────────────┘
 ```
 
-
-
-┌─────────────────────────────────────────────────────────┐
-
-│                     GameController                      │
-
-│  (State Machine, Core Coordination \& Rules Mediation)   │
-
-└───────────┬─────────────────────────┬───────────────────┘
-
-│ Composition             │ Composition
-
-▼                         ▼
-
-┌───────────────────────┐ ┌───────────────────────────────┐
-
-│         Board         │ │         EngineManager         │
-
-│ (Pure Data Model/FEN) │ │  (Asynchronous Stockfish IPC) │
-
-└───────────────────────┘ └───────────────────────────────┘
-
-▲
-
-│ Dependency (Reads State via Const Reference)
-
-┌───────────┴───────────┐
-
-│       Renderer        │
-
-│ (Immediate-Mode UI)   │
-
-└───────────────────────┘
-
-
-
-```
-
-
-
-\---
-
-
-
-\## Detailed Class Reference
-
-
-
-\### 1. Class: `GameController`
-
-Centralizes the application's business logic, managing state transitions between the lobby and active play, while orchestrating human interactions, audio effects, and engine background updates.
-
-
-
-\#### Public Member Functions
-
-\* `GameController(int windowWidth, int windowHeight, int tileSize, int sidebarWidth, Renderer\* renderer)`
-
-&#x20;   \* Constructs the controller and initializes game variables, audio asset contexts, the engine subprocess, and immediate-mode layout boundaries.
-
-\* `\~GameController()`
-
-&#x20;   \* Destructor; coordinates the explicit shutdown sequence for the background engine thread and frees active audio devices.
-
-\* `int getTargetElo() const` / `void cycleTargetElo()`
-
-&#x20;   \* Accesses and cycles through the targeted engine Elo difficulty constraints ($500 \\to 1000 \\to 1500 \\to 2000$).
-
-\* `bool isMatchStarted() const` / `bool isMatchEnded() const`
-
-&#x20;   \* Queries active lifecycle flag states defining current input interaction scopes (Lobby vs. Active Match vs. Post-Match Review).
-
-\* `void startMatch()` / `void endMatch()`
-
-&#x20;   \* Initializes or tears down active match parameters, handling background AI thread triggers upon instantiation.
-
-\* `void undo()` / `void redo()`
-
-&#x20;   \* Traverses individual match steps sequentially while transitioning the system context to History Review mode.
-
-\* `void goToHistoryIndex(size\_t index)`
-
-&#x20;   \* Performs arbitrary random-access traversal across the timeline history array.
-
-\* `float getDisplayedEvaluation() const`
-
-&#x20;   \* Retrieves the stored float evaluation score relative to the currently scrubbed history position index.
-
-\* `bool isMateDetected() const` / `int getMateInMoves() const`
-
-&#x20;   \* Queries checkmate evaluation status and distance metrics passed back from the engine worker thread.
-
-\* `bool canUndo() const` / `bool canRedo() const`
-
-&#x20;   \* Validates boundary constraints to guard against out-of-bounds history array lookups.
-
-\* `void update()`
-
-&#x20;   \* Processes frame-by-frame user inputs and advances application state; executed exactly once per frame tick.
-
-\* `void requestHint()` / `void clearActiveHint()` / `bool canRequestHint() const`
-
-&#x20;   \* Dispatches or aborts sub-second asynchronous calculations targeted for generating on-screen destination visual helpers.
-
-\* `std::string getHintMove() const`
-
-&#x20;   \* Returns the cached best move string derived from the hint sequence in standard Universal Chess Interface (UCI) notation.
-
-\* `Board\& getBoard()`
-
-&#x20;   \* Exposes a mutable reference to the underlying structural data matrix for direct modification.
-
-\* `std::optional<std::pair<int,int>> getSelected() const`
-
-&#x20;   \* Exposes coordinates for the currently selected tile index, returning `std::nullopt` if no piece is active.
-
-\* `std::string getMoveMessage() const` / `float getMessageTimer() const`
-
-&#x20;   \* Tracks and updates temporal text data flags deployed to notify users of illegal move inputs.
-
-\* `GameController::PlayerColor getPlayerColor() const` / `void setPlayerColor(...)` / `void togglePlayerColor()`
-
-&#x20;   \* Accesses, defines, or inverts the human participant's perspective and piece alignment.
-
-\* `bool isEngineIdle() const`
-
-&#x20;   \* Returns true if the engine thread state is un-entangled and sitting in a blocking idle pause loop.
-
-
-
-\#### Private Data Members
-
-\* `Board m\_board` — In-memory representation of the active match grid state and rule validator engine.
-
-\* `EngineManager m\_engine` — Multi-threaded operating system pipeline wrapper isolating Stockfish logic.
-
-\* `EngineMode m\_engineMode` — Enumerated parameter tracking worker status (`Idle`, `AI\_Thinking`, `Hint\_Calculating`).
-
-\* `std::string m\_hintMove` — Cached coordinates storing the localized hint text asset.
-
-\* `bool m\_isReviewingHistory` — Controls user interaction gates when viewing historical steps.
-
-\* `std::optional<std::pair<int,int>> m\_selected` — Zero-drift structure holding array indexes for targeted pieces.
-
-\* `std::vector<float> m\_evaluationHistory` — Dynamic vector collection preserving continuous engine scoring.
-
-\* `size\_t m\_historyIndex` — Timeline frame pointer index mapping history viewing locations.
-
-\* `int m\_targetElo` — Scalar value containing the literal chosen difficulty floor.
-
-\* `PlayerColor m\_playerColor` — Tracks active alignment definitions assigned to the user.
-
-\* `int m\_timePerMoveMs` — Maximum time allocated for engine processing sequences before enforcing execution cut-off.
-
-\* `int m\_eloIndex` — Internal structural offset position tracking option shifts.
-
-\* `bool m\_gameStarted` — Tracks execution of an alive game loop instance.
-
-\* `bool m\_matchEnded` — State parameter tracking transitions into decoupled review loops.
-
-\* `std::string m\_moveMessage` — String container storing error strings.
-
-\* `float m\_messageTimer` — Tracks screen duration remaining for temporary text notices.
-
-\* `int m\_windowWidth` / `m\_windowHeight` / `m\_tileSize` / `m\_sidebarWidth` — Metric dimensions.
-
-\* `Renderer\* m\_renderer` — Non-owning pointer targeting global drawing structures.
-
-\* `Sound m\_sndCapture` / `m\_sndCastle` / `m\_sndMoveCheck` / `m\_sndMoveSelf` / `m\_sndPromote` — Sound contexts.
-
-\* `bool m\_audioEnabled` — Verification flag reporting hardware driver initialization success.
-
-
-
-\---
-
-
-
-\### 2. Class: `Renderer`
-
-Responsible exclusively for pixel output, coordinate transformations, asset allocations, and immediate-mode UI interface scaling.
-
-
-
-\#### Public Member Functions
-
-\* `Renderer(int windowWidth, int windowHeight, int tileSize)`
-
-&#x20;   \* Initializes display canvas variables and pre-computes operational offset metrics.
-
-\* `\~Renderer()`
-
-&#x20;   \* Iterates through allocations to cleanly drop textures, memory buffers, and font atlases.
-
-\* `void setTheme(Renderer::BoardTheme theme)`
-
-&#x20;   \* Modifies color parameters across rendering operations based on global enum selections.
-
-\* `bool loadTextures()`
-
-&#x20;   \* Allocates PNG asset streams into memory maps; returns true if files successfully bound.
-
-\* `void render(const Board\& board, const std::optional<std::pair<int,int>>\& selected, float evaluation, GameController\& controller)`
-
-&#x20;   \* The primary layout function. Transforms class datasets into graphical arrays, outputs pieces, and updates interaction regions.
-
-\* `void triggerMoveAnimation(int fromX, int fromY, int toX, int toY, char pieceChar, char pieceColor, bool hasSecondary = false, int secFromX = -1, int secToX = -1, char secPieceChar = 'r')`
-
-&#x20;   \* Initializes structural delta paths used to interpolate piece transitions smoothly across frames.
-
-
-
-\#### Private Data Members
-
-\* `int m\_windowWidth` / `m\_windowHeight` / `m\_tileSize` — Base configuration dimensions.
-
-\* `int m\_boardPixelSize` / `m\_boardOriginX` / `m\_boardOriginY` — Dynamic rendering layout scales.
-
-\* `int m\_sidebarWidth` — Fixed horizontal dimension allocation reserved for side info panels.
-
-\* `std::unordered\_map<std::string, Texture2D> m\_textures` — Memory map holding loaded GPU texture assets.
-
-\* `Font m\_mainFont` — Handle structure containing loaded TrueType Font assets.
-
-\* `BoardTheme m\_theme` — Enumerated parameter configuring active palette styling.
-
-\* `int m\_themeIndex` — Counter parameter tracking palette configuration toggles.
-
-\* `bool m\_animatePieces` — Master flag controlling interpolation animation paths.
-
-\* `PieceAnimation m\_currentAnim` — Structural wrapper maintaining active frame positional deltas.
-
-\* `float m\_historyScrollOffset` — Vertical tracker capturing structural scrolling positions in long game histories.
-
-\* `double m\_lastHistoryClickTime` — Floating timestamp capturing input delta intervals to filter double clicks.
-
-\* `int m\_lastHistoryClickedIndex` — Tracked history row value utilized to verify target uniformity.
-
-\* `mutable bool m\_flip` — Flag defining board rendering orientation (marked `mutable` to permit state shifts during `const` drawing loops).
-
-
-
-\---
-
-
-
-\### 3. Class: `Board`
-
-Acts as the central rule engine and pure state model of the application, managing move processing, verification loops, validation simulations, and notation strings.
-
-
-
-\#### Public Member Functions
-
-\* `Board()`
-
-&#x20;   \* Sets class parameters to blank conditions and resets state vectors.
-
-\* `const Piece\* at(int row, int col) const` / `Piece\* at(int row, int col)`
-
-&#x20;   \* Overloaded methods providing row/col checks on piece assets; returns `nullptr` for empty squares.
-
-\* `void initializeStandardSetup()`
-
-&#x20;   \* Clears memory structures and constructs standard positions matching baseline rules.
-
-\* `MoveResult movePiece(int startRow, int startCol, int endRow, int endCol)`
-
-&#x20;   \* Commits execution adjustments to memory models, verifying legality and evaluating side effects (e.g., Castling, Check detection, Promotion triggers).
-
-\* `bool isSquareUnderAttack(int row, int col, PieceColor attackerColor) const`
-
-&#x20;   \* Scans paths relative to target tiles to verify intersections from opposing pieces.
-
-\* `bool isInCheck(PieceColor color) const`
-
-&#x20;   \* Locates target King pieces to check for structural threats.
-
-\* `bool hasLegalMoves(PieceColor color) const` / `hasLegalMoves(PieceColor color)`
-
-&#x20;   \* Iterates across viable paths to check for legal alternatives, serving as the basis for checkmate evaluations.
-
-\* `GameState getGameState() const`
-
-&#x20;   \* Returns categorized state variables detailing terminal match statuses (`Active`, `Checkmate`, `Stalemate`).
-
-\* `const std::string\& getLastMoveError() const`
-
-&#x20;   \* Exposes internal text identifiers outlining input failures.
-
-\* `std::pair<int,int> getEnPassantTarget() const`
-
-&#x20;   \* Returns coordinates for active en-passant validation targets, returning `{-1,-1}` if empty.
-
-\* `void undoMove()` / `void redoMove()`
-
-&#x20;   \* Restores or re-applies historical move steps using cached delta parameters.
-
-\* `bool wouldMoveBeLegal(int startRow, int startCol, int endRow, int endCol) const`
-
-&#x20;   \* Simulates the target move via structural state changes, checking for legality before rolling back modifications.
-
-\* `bool isAwaitingPromotion() const` / `std::pair<int,int> getPendingPromotionSquare() const`
-
-&#x20;   \* Queries active pawn replacement overlays and identifies corresponding coordinate targets.
-
-\* `MoveResult completePromotion(PieceType chosenType)`
-
-&#x20;   \* Finalizes active promotion sequences by replacing target pointers with chosen piece references.
-
-\* `std::optional<ChessMove> getLastMove() const`
-
-&#x20;   \* Retrieves data matching the most recently committed move step to drive interface highlight behaviors.
-
-\* `std::string getFEN() const` / `bool loadFromFEN(const std::string\& fen)`
-
-&#x20;   \* Generates or parses standard Forsyth-Edwards Notation (FEN) text streams.
-
-\* `std::string moveToSAN(const ChessMove\& move)` / `void setLastMoveSAN(const std::string\& san)`
-
-&#x20;   \* Generates or caches standard algebraic notation text blocks matching structural move variables.
-
-\* `std::string getFullPGNText() const`
-
-&#x20;   \* Compiles complete Portable Game Notation (PGN) documentation blocks utilizing move history vectors.
-
-\* `std::vector<ChessMove> getMoveHistory() const`
-
-&#x20;   \* Provides deep copies of active history stacks to decouple visualization passes.
-
-\* `ChessMove parseEngineMove(const std::string\& moveStr)`
-
-&#x20;   \* Transforms raw engine strings (e.g., `e2e4`, `e7e8q`) into formatted application structs.
-
-\* `PieceColor getCurrentTurn() const`
-
-&#x20;   \* Reports active player flags defining turn parameters.
-
-\* `uint8\_t getCastlingRights() const`
-
-&#x20;   \* Exposes a 4-bit bitmask tracking active castling eligibility.
-
-
-
-\#### Private Data Members
-
-\* `std::unique\_ptr<Piece> m\_squares\[Tiles]\[Tiles]` — Primary matrix holding ownership references for pieces.
-
-\* `PieceColor m\_currentTurn` — Enum flag containing current turn parameters.
-
-\* `std::string m\_lastMoveError` — Internal character storage containing structural errors.
-
-\* `std::pair<int,int> m\_enPassantTarget` — Targeted vector recording valid en-passant paths.
-
-\* `std::vector<ChessMove> m\_moveHistory` — History log tracking committed steps to support serialization routines.
-
-\* `std::vector<ChessMove> m\_redoStack` — Secondary history collection tracking available forward steps.
-
-\* `bool m\_isAwaitingPromotion` — Operational gate tracking active on-screen replacement menus.
-
-\* `std::pair<int,int> m\_pendingPromotionSquare` — Structural row/col bounds tracing promotion positions.
-
-\* `std::optional<ChessMove> m\_lastMove` — Struct copy mapping recent steps to drive visual elements.
-
-\* `int m\_halfmoveClock` — Step tracker verifying requirements for the 50-move draw rule.
-
-\* `int m\_fullmoveNumber` — Core loop step counter outputted within FEN streams.
-
-\* `uint8\_t m\_castlingRights` — Operational bitfield containing binary indicators for castling flags.
-
-
-
-\---
-
-
-
-\### 4. Class: `EngineManager`
-
-An isolated multi-threaded system component running Stockfish within a separate background process, communicating asynchronously via low-level standard pipes.
-
-
-
-\#### Public Member Functions
-
-\* `EngineManager()`
-
-&#x20;   \* Clears handles and registers atomic status primitives to zero states.
-
-\* `\~EngineManager()`
-
-&#x20;   \* Guarantees standard termination sequences are cleanly completed to avoid orphaned system processes.
-
-\* `bool launch(const std::string\& path = "")`
-
-&#x20;   \* Spawns engine subprocesses and connects asynchronous standard output streams via Windows API anonymous pipes.
-
-\* `bool sendCommand(const std::string\& cmd)`
-
-&#x20;   \* Dispatches text commands to standard engine input streams in a non-blocking configuration.
-
-\* `bool startSearch(const std::string\& fen, int timeMs)`
-
-&#x20;   \* Dispatches positional layout state markers and initiates localized engine analysis rounds.
-
-\* `void stopSearch()`
-
-&#x20;   \* Interrupts deep calculation searches to force instant outputs from background processes.
-
-\* `bool checkBestMove(std::string\& outMove)`
-
-&#x20;   \* Non-blocking thread scanner checking engine queues; copies data to the output variable upon calculation completion.
-
-\* `float getEvaluation() const`
-
-&#x20;   \* Exposes current evaluation values normalized from White's perspective.
-
-\* `void setDifficulty(int elo)`
-
-&#x20;   \* Limits calculation depth configurations across engine runs using standard UCI interface limits.
-
-\* `void clearMateDetection()` / `bool isMateDetected() const` / `int getMateInMoves() const`
-
-&#x20;   \* Accesses or resets calculations capturing structural checkmate distances.
-
-\* `bool isRunning() const`
-
-&#x20;   \* Returns true if background threads and active system process handles are valid.
-
-\* `void shutdown()`
-
-&#x20;   \* Dispatches termination indicators, terminates system pipes, and joins the worker thread.
-
-
-
-\#### Private Data Members
-
-\* `void\* m\_hProcess` — Internal operating system reference tracking the Stockfish background task.
-
-\* `void\* m\_hStdinRead` / `m\_hStdinWrite` — Pipe handles tracking internal engine instruction feeds.
-
-\* `void\* m\_hStdoutRead` / `m\_hStdoutWrite` — Pipe endpoints capturing engine terminal data outputs.
-
-\* `std::thread m\_workerThread` — Concurrent processing thread handling blocked line-by-line streaming passes.
-
-\* `std::atomic<bool> m\_isRunning` — Atomic state flag confirming process health parameters across runtime iterations.
-
-\* `std::atomic<bool> m\_shouldShutdown` — Core atomic thread control parameter used to drop reading loops.
-
-\* `std::mutex m\_mutex` — Synchronization lock protecting multi-threaded operations.
-
-\* `std::string m\_lastLine` — String tracker capturing output chunks for validation parsing.
-
-\* `std::string m\_bestMove` — Processed output variable identifying chosen strategic pathways.
-
-\* `std::atomic<bool> m\_bestMoveReady` — Atomic visibility flag confirming data presence for main thread polling loops.
-
-\* `std::atomic<bool> m\_searchAborted` — Atomic flag tracking user-driven process interruptions.
-
-\* `std::atomic<float> m\_currentEvaluation` — Synchronized score parameter holding evaluation outputs.
-
-\* `std::atomic<bool> m\_isMateDetected` — Atomic flag mapping checkmate status indicators.
-
-\* `std::atomic<int> m\_mateInMoves` — Atomic counter identifying move gaps before checkmate constraints.
-
-\* `std::atomic<bool> m\_positionSideIsWhite` — Tracks active turns inside internal parsing steps to normalize evaluation scores.
-
-\* `std::atomic<bool> m\_responseReceived` — Synchronization flag managing step sequences during engine setup handshakes.
-
-\* `std::string m\_expectedResponse` — Validation parameter defining expected engine handshake responses.
-
-
-
-```
-
-
-
-\---
-
+---
+
+## Class Interfaces & Member Specifications
+
+### 1. Class: `GameController`
+Manages the application state machine, game loop coordination, and serves as the logic mediator between the user interface and backend services.
+
+#### Public Member Functions
+* `GameController(int windowWidth, int windowHeight, int tileSize, int sidebarWidth, Renderer* renderer)`
+    * Constructs the controller and initializes game, audio, engine, and UI layout states.
+* `~GameController()`
+    * Destructor; coordinates an orderly shutdown of the Stockfish engine process and terminates the audio context.
+* `int getTargetElo() const`
+    * Returns the currently selected target Elo constraint level.
+* `void cycleTargetElo()`
+    * Cycles to the next available Elo setting (500 -> 1000 -> 1500 -> 2000) and updates engine configurations.
+* `bool isMatchStarted() const`
+    * Returns whether a chess match is currently active.
+* `void startMatch()`
+    * Resets the board model, initializes a new match state, and engages the AI thread if the human selects Black.
+* `void endMatch()`
+    * Terminates the current match state and resets the controller/UI context back to the main lobby menu.
+* `void undo()`
+    * Undoes one ply (half-move) from the timeline and places the system into history review mode.
+* `void redo()`
+    * Redoes one ply forward from the timeline history stack and updates the review mode state.
+* `void goToHistoryIndex(size_t index)`
+    * Performs arbitrary random-access navigation to a specific frame pointer index in the match history vector.
+* `float getDisplayedEvaluation() const`
+    * Returns the precise positional evaluation score corresponding to the currently viewed history index frame.
+* `bool isMateDetected() const`
+    * Queries whether the background engine parsing thread has flagged an impending checkmate condition.
+* `int getMateInMoves() const`
+    * Retrieves the numerical distance (in plies) to the detected checkmate reported by the engine.
+* `bool canUndo() const`
+    * Condition check tracking whether an undo command is valid (engine must be idle and `historyIndex > 0`).
+* `bool canRedo() const`
+    * Condition check tracking whether a redo command is valid (engine must be idle and forward timeline steps exist).
+* `void update()`
+    * Processes structural keyboard/mouse inputs and advances core game variables; invoked once per frame tick.
+* `void requestHint()`
+    * Dispatches a localized, sub-second engine search request to generate a visual hint move.
+* `void saveLatestGame()`
+    * Serializes the current match matrix into `latest_match.txt` (records player alignment and the raw UCI move sequence).
+* `void loadLatestGame()`
+    * Parses and replays a stored match configuration directly from the local disk-backed text file.
+* `void clearActiveHint()`
+    * Cancels any active hint search sequence and flushes the visual hint coordinate buffers.
+* `bool canRequestHint() const`
+    * Validates whether a hint request is legal (engine must be idle, match started, and it must be the human's turn).
+* `std::string getHintMove() const`
+    * Returns the last computed hint move in standard LAN/UCI string format, or an empty string if unallocated.
+* `Board& getBoard()`
+    * Exposes a mutable reference to the underlying structural data board matrix.
+* `std::optional<std::pair<int,int>> getSelected() const`
+    * Returns the array coordinates `[row, col]` of the currently selected square, or `std::nullopt` if unselected.
+* `std::string getMoveMessage() const`
+    * Retrieves transient UI notification text defining movement error feedbacks.
+* `float getMessageTimer() const`
+    * Returns the frame duration remaining for displaying the transient error text overlay.
+* `GameController::PlayerColor getPlayerColor() const`
+    * Accesses the alignment state setting assigned to the human participant.
+* `void setPlayerColor(GameController::PlayerColor c)`
+    * Force-assigns the human participant's alignment state.
+* `void togglePlayerColor()`
+    * Inverts the player side variable between White and Black alignments.
+* `bool isEngineIdle() const`
+    * Evaluates true if the background calculation worker thread is in an unengaged, non-blocking standby state.
+* `bool isMatchEnded() const`
+    * Evaluates true if a terminal state (Checkmate/Draw) has frozen the match clock and shifted the system to post-match review.
+
+#### Private Data Members
+* `Board m_board` — In-memory object representation of the active chess grid and its legal validator routines.
+* `EngineManager m_engine` — Multi-threaded system subprocess controller handling Stockfish execution contexts.
+* `EngineMode m_engineMode` — Tracked enumerated status flag (`Idle`, `AI_Thinking`, `Hint_Calculating`).
+* `std::string m_hintMove` — Cached coordinate markers defining the current calculated hint target.
+* `bool m_isReviewingHistory` — Gate variable disabling live piece manipulation overlays during history scrubs.
+* `std::optional<std::pair<int,int>> m_selected` — Coordinate tracker capturing selected piece indices.
+* `std::vector<float> m_evaluationHistory` — Vector array saving sequential numerical evaluation values per ply.
+* `size_t m_historyIndex` — Step pointer capturing the current frame being visually displayed.
+* `int m_targetElo` — Target engine strength configuration limit variable.
+* `PlayerColor m_playerColor` — Perspective color assignment setting assigned to the user.
+* `int m_timePerMoveMs` — Maximum execution time allowed for engine searching cycles before cut-off triggers.
+* `int m_eloIndex` — Array offset variable mapping choice positions within static ELO data options.
+* `bool m_gameStarted` — Flag state recording whether a match is running inside the core loop bounds.
+* `bool m_matchEnded` — Execution state marker shifting input paths into decoupled review behaviors.
+* `std::string m_moveMessage` — String storage holding current on-screen error notifications.
+* `float m_messageTimer` — Execution lifetime variable tracking the decay path of temporary text blocks.
+* `int m_windowWidth` / `m_windowHeight` / `m_tileSize` / `m_sidebarWidth` — Metric canvas layout dimensions.
+* `Renderer* m_renderer` — Non-owning raw pointer pointing toward the primary graphical asset worker instance.
+* `Sound m_sndCapture` / `m_sndCastle` / `m_sndMoveCheck` / `m_sndMoveSelf` / `m_sndPromote` — Raylib audio context structures.
+* `bool m_audioEnabled` — System validation gate recording audio device initialization success.
+
+---
+
+### 2. Class: `Renderer`
+Responsible exclusively for layout matrix transforms, drawing assets, color scaling, and localized UI side panel geometry.
+
+#### Public Member Functions
+* `Renderer(int windowWidth, int windowHeight, int tileSize)`
+    * Constructs layout metrics and establishes pixel origin bounds based on initialization settings.
+* `~Renderer()`
+    * Destructor; iterates through device memories to cleanly drop fonts, buffers, and texturing sheets.
+* `void setTheme(Renderer::BoardTheme theme)`
+    * Reconfigures hex color arrays used across canvas loops based on active enum definitions.
+* `bool loadTextures()`
+    * Binds image asset files directly to map variables; returns true upon asset allocation successes.
+* `void render(const Board& board, const std::optional<std::pair<int,int>>& selected, float evaluation, GameController& controller)`
+    * Core visual pass function. Maps current class data structures to graphical primitives every frame.
+* `void triggerMoveAnimation(int fromX, int fromY, int toX, int toY, char pieceChar, char pieceColor, bool hasSecondary = false, int secFromX = -1, int secToX = -1, char secPieceChar = 'r')`
+    * Instantiates frame vector delta variables to smoothly interpolate piece movements across frames.
+
+#### Private Data Members
+* `int m_windowWidth` / `m_windowHeight` / `m_tileSize` — Base resolution parameters.
+* `int m_boardPixelSize` / `m_boardOriginX` / `m_boardOriginY` — Canvas coordinate mapping markers.
+* `int m_sidebarWidth` — Fixed horizontal screen padding allocation reserved for text lists and logs.
+* `std::unordered_map<std::string, Texture2D> m_textures` — Unordered memory index mapping textures to asset string keys.
+* `Font m_mainFont` — Raylib structure containing loaded TrueType Font assets.
+* `BoardTheme m_theme` — Struct parameter defining color schemes across tiles.
+* `int m_themeIndex` — Integer index used to cycle selected color arrays.
+* `bool m_animatePieces` — State gate controlling asset position interpolations.
+* `PieceAnimation m_currentAnim` — Structural wrapper holding positional updates for current asset interpolations.
+* `float m_historyScrollOffset` — Delta value tracking vertical mouse scroll offsets inside the sidebar panel.
+* `double m_lastHistoryClickTime` — Time parameter recording double click bounds within history listings.
+* `int m_lastHistoryClickedIndex` — Index tracking matching historical text bounds to clear click drift.
+* `mutable bool m_flip` — Drawing configuration tracker controlling board inversion.
+
+---
+
+### 3. Class: `Board`
+Acts as the algorithmic data model and core rules engine. Contains zero visualization components, handling matrix variables, algebraic formatting, and simulation rollbacks.
+
+#### Public Member Functions
+* `Board()`
+    * Generates a blank layout and sets reference vectors to standard initialization scopes.
+* `const Piece* at(int row, int col) const` / `Piece* at(int row, int col)`
+    * Matrix address accessor returning references to items at targeted `[row, col]` slots.
+* `void initializeStandardSetup()`
+    * Configures pointer arrays to clear matching baseline initial setups.
+* `MoveResult movePiece(int startRow, int startCol, int endRow, int endCol)`
+    * Primary execution command. Adjusts piece matrices, checks rule boundaries, and handles multi-piece anomalies.
+* `bool isSquareUnderAttack(int row, int col, PieceColor attackerColor) const`
+    * Iterates outward vectors relative to targeted positions to evaluate if threat parameters intersect.
+* `bool isInCheck(PieceColor color) const`
+    * Identifies active King coordinates to test if threat paths report target intersections.
+* `bool hasLegalMoves(PieceColor color) const` / `hasLegalMoves(PieceColor color)`
+    * Iterates through available move vectors to check for structural checkmate boundaries.
+* `GameState getGameState() const`
+    * Returns categorized status trackers identifying terminal game parameters (`Active`, `Checkmate`, `Stalemate`).
+* `const std::string& getLastMoveError() const`
+    * Exposes precise internal failure tracking strings to support interface logic processing.
+* `std::pair<int,int> getEnPassantTarget() const`
+    * Returns vector coordinates indicating legal en-passant captures, or `{-1,-1}` if empty.
+* `void undoMove()` / `void redoMove()`
+    * Reverts recent adjustments or re-applies structural modifications using historical delta parameters.
+* `bool wouldMoveBeLegal(int startRow, int startCol, int endRow, int endCol) const`
+    * Simulates changes across local datasets, testing state validity before triggering automated tracking rollbacks.
+* `bool isAwaitingPromotion() const` / `std::pair<int,int> getPendingPromotionSquare() const`
+    * Queries active pawn replacement overlays and identifies corresponding coordinate targets.
+* `MoveResult completePromotion(PieceType chosenType)`
+    * Finalizes pawn replacement procedures by swapping target references with chosen object definitions.
+* `std::optional<ChessMove> getLastMove() const`
+    * Returns structural tracking data containing the most recent valid move to drive visual interfaces.
+* `std::string getFEN() const` / `bool loadFromFEN(const std::string& fen)`
+    * Generates or parses standard Forsyth-Edwards Notation (FEN) data strings.
+* `std::string moveToSAN(const ChessMove& move)` / `void setLastMoveSAN(const std::string& san)`
+    * Maps internal coordinate logs into Standard Algebraic Notation (SAN) character arrays and caches them.
+* `std::string getFullPGNText() const`
+    * Iterates across state logging history items to compile structured Portable Game Notation (PGN) blocks.
+* `std::vector<ChessMove> getMoveHistory() const`
+    * Copies historical vector sets out of local boundaries to support parallel visualization checks.
+* `ChessMove parseEngineMove(const std::string& moveStr)`
+    * Processes standard LAN/UCI strings to initialize native application objects.
+* `PieceColor getCurrentTurn() const`
+    * Identifies targeted color parameters matching active turn identifiers.
+* `uint8_t getCastlingRights() const`
+    * Returns a 4-bit bitmask sequence detailing active castling capabilities.
+
+#### Private Data Members
+* `std::unique_ptr<Piece> m_squares[Tiles][Tiles]` — Primary matrix data container holding exclusive ownership references of piece assets.
+* `PieceColor m_currentTurn` — State parameter mapping current turn parameters.
+* `std::string m_lastMoveError` — Internal character cache containing tracking errors.
+* `std::pair<int,int> m_enPassantTarget` — Coordinate indices mapping legal en-passant tracking positions.
+* `std::vector<ChessMove> m_moveHistory` — Active core vector history mapping committed operational records.
+* `std::vector<ChessMove> m_redoStack` — Forward collection storage supporting inverse tracking rollbacks.
+* `bool m_isAwaitingPromotion` — Context controller blocking input paths during promotion option selectors.
+* `std::pair<int,int> m_pendingPromotionSquare` — Positional coordinates pinning promotion target locations.
+* `std::optional<ChessMove> m_lastMove` — Structural reference copy tracing chronological items to update highlighting.
+* `int m_halfmoveClock` — Step counter tracking rules required by fifty-move draw logic.
+* `int m_fullmoveNumber` — Core engine step tracker appended within FEN state records.
+* `uint8_t m_castlingRights` — Functional bitfield configuration holding active castling capability flags.
+
+---
+
+### 4. Class: `EngineManager`
+An isolated multi-threaded platform layer that spawns Stockfish inside an independent process, managing concurrent inter-process communication via Win32 pipes.
+
+#### Public Member Functions
+* `EngineManager()` / `~EngineManager()`
+    * Configures handle tracking references and ensures strict teardown patterns are completed to eliminate stray threads.
+* `bool launch(const std::string& path = "")`
+    * Instantiates executable subprocess loops and routes asynchronous standard output data streams via operating system anonymous pipe endpoints.
+* `bool sendCommand(const std::string& cmd)`
+    * Forwards command characters onto active input pipes in a safe, non-blocking configuration.
+* `bool startSearch(const std::string& fen, int timeMs)`
+    * Transmits layout FEN positions and triggers localized engine search configurations.
+* `void stopSearch()`
+    * Sends an immediate interrupt override command onto background processing contexts to drop computation calculations.
+* `bool checkBestMove(std::string& outMove)`
+    * Non-blocking atomic query function. Copies the calculation result string to the output parameter upon background completion.
+* `float getEvaluation() const`
+    * Returns the most recent scoring valuation, normalized relative to White's positional alignment perspective.
+* `void setDifficulty(int elo)`
+    * Forces limits across engine search limits matching user choices via standardized UCI interface rules.
+* `void clearMateDetection()` / `bool isMateDetected() const` / `int getMateInMoves() const`
+    * Accesses or flushes cached evaluations that hold tracking indicators for checkmate vectors and distances.
+* `bool isRunning() const`
+    * Verification check confirming background threads and process variables report alive states.
+* `void shutdown()`
+    * Dispatches process exit requests, tears down system pipes, and rejoins multi-threaded execution loops.
+
+#### Private Data Members
+* `void* m_hProcess` — Opaque operating system instance tracking references pointing to the background task engine.
+* `void* m_hStdinRead` / `m_hStdinWrite` / `m_hStdoutRead` / `m_hStdoutWrite` — Pipe handles tracking internal engine operational input and output pathways.
+* `std::thread m_workerThread` — Concurrent processing thread handling continuous blocking line parsing streams.
+* `std::atomic<bool> m_isRunning` / `m_shouldShutdown` — Atomic verification flags tracking runtime loops and shutdown procedures.
+* `std::mutex m_mutex` — Synchronization lock protecting multi-threaded asset modification actions.
+* `std::string m_lastLine` / `m_bestMove` — Text trackers capturing output chunks and strategic pathways.
+* `std::atomic<bool> m_bestMoveReady` — Atomic visibility variable checking calculated items availability to drive polling routines.
+* `std::atomic<bool> m_searchAborted` — Atomic flag tracking user-driven process interruptions.
+* `std::atomic<float> m_currentEvaluation` — Synchronized atomic parameter storing calculation scoring metrics.
+* `std::atomic<bool> m_isMateDetected` / `m_mateInMoves` — Atomic flags mapping checkmate status and distances.
+* `std::atomic<bool> m_positionSideIsWhite` — Tracks active turns inside internal parsing steps to normalize evaluation scores.
+* `std::atomic<bool> m_responseReceived` / `std::string m_expectedResponse` — Handshake variables validating targeting lines across startup sequences.
