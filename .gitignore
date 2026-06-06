@@ -427,3 +427,14 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+
+# Ignore compiler build outputs and caches
+build/
+
+# Ignore IDE-specific workspace configurations
+.vscode/
+.clangd/
+
+# Optional: Ignore the compiled executable if it builds in the root
+*.exe
